@@ -1,491 +1,699 @@
 {% extends 'base_dashboard.html' %}
+{% block title %}NeuroSense · Live Monitoring{% endblock %}
+{% block page_title %}Live Monitoring{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-3">
+  <div id="last-timestamp" style="font-size:0.78rem;color:#64748b;font-weight:500;">Last reading: —</div>
+  <div id="conn-pill" style="display:flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:5px 14px;font-size:0.82rem;font-weight:600;">
+    <span id="conn-dot" style="width:8px;height:8px;border-radius:50%;background:#dc2626;flex-shrink:0;transition:background .3s;"></span>
+    <span id="conn-text">Disconnected</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+:root {
+  --teal:    #0b6677;
+  --teal2:   #2fb5a9;
+  --green:   #16a34a;
+  --yellow:  #ca8a04;
+  --orange:  #ea580c;
+  --red:     #dc2626;
+  --darkred: #7f1d1d;
+  --surface: #ffffff;
+  --border:  #e2e8f0;
+  --muted:   #64748b;
+  --bg:      #f6fbfb;
+}
+.ns-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.05); }
+.ns-metric { display:flex; flex-direction:column; gap:2px; }
+.ns-metric .lbl  { font-size:0.70rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.ns-metric .val  { font-size:1.8rem; font-weight:700; line-height:1; }
+.ns-metric .sub  { font-size:0.75rem; color:var(--muted); margin-top:3px; min-height:1em; }
+.section-label   { font-size:0.70rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:.5rem; }
+.badge-pill      { display:inline-flex; align-items:center; gap:6px; padding:5px 14px; border-radius:999px; font-weight:700; font-size:0.82rem; color:#fff; }
+.patient-wrap    { position:relative; }
+.patient-wrap select { appearance:none; background:#f1f5f9; border:1px solid var(--border); border-radius:10px; padding:7px 34px 7px 12px; font-size:0.85rem; font-weight:600; color:#1e293b; cursor:pointer; min-width:190px; }
+.patient-wrap::after { content:"▾"; position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; font-size:.8rem; }
+.chart-wrap      { height:220px; position:relative; }
+.chart-ts        { font-size:0.70rem; color:var(--muted); text-align:right; margin-top:4px; }
+.clinical-box    { background:#f8fafc; border-left:3px solid var(--teal); border-radius:0 10px 10px 0; padding:.9rem 1.1rem; font-family:monospace; font-size:0.80rem; line-height:1.85; white-space:pre-wrap; color:#334155; max-height:280px; overflow-y:auto; }
+.flag-item { font-size:0.80rem; padding:3px 0; }
+.flag-warn { color:var(--orange); }
+.flag-crit { color:var(--red); }
+.flag-ok   { color:var(--green); }
+.flag-info { color:var(--teal); }
+.ns-btn { display:inline-flex; align-items:center; gap:6px; border:none; border-radius:10px; padding:8px 18px; font-weight:600; font-size:0.85rem; cursor:pointer; transition:opacity .15s; }
+.ns-btn:hover { opacity:.87; }
+.ns-btn-primary { background:linear-gradient(90deg,var(--teal),var(--teal2)); color:#fff; }
+.ns-btn-stop    { background:var(--red); color:#fff; }
+.ns-btn-ghost   { background:#f1f5f9; color:#1e293b; border:1px solid var(--border); }
+.readings-table  { font-size:0.75rem; }
+.readings-table th { background:#f8fafc; position:sticky; top:0; }
+{% endblock %}
+
 {% block content %}
-<style>
-  :root {
-      --med-teal: #1a6b5a;
-      --med-green: #16a34a;
-      --med-yellow: #ca8a04;
-      --med-orange: #ea580c;
-      --med-red: #dc2626;
-      --med-darkred: #7f1d1d;
-  }
-  .stat-card {
-      background: white; border-radius: 8px; padding: 1.5rem; 
-      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; height: 100%;
-  }
-  .stat-value { font-size: 2rem; font-weight: bold; margin-top: 10px; }
-  .badge-classification { padding: 8px 16px; border-radius: 9999px; font-weight: bold; font-size: 1.1rem; color: white; display: inline-block; margin-right: 10px; }
-  .clinical-findings { background: #f8fafc; border-left: 4px solid var(--med-teal); padding: 1.5rem; border-radius: 0 8px 8px 0; font-family: monospace; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.5; text-align: left; }
-  .dot { height: 12px; width: 12px; border-radius: 50%; display: inline-block; }
-</style>
+<div style="background:var(--bg);min-height:calc(100vh - 80px);">
 
-<div class="container-fluid py-4" style="background-color: #f1f5f9; min-height: 100vh;">
-  <!-- SECTION 1: TOP PATIENT CONTEXT BAR -->
-  <div class="row mb-4">
-      <div class="col-12">
-          <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded shadow-sm" style="border-top: 4px solid var(--med-teal);">
-              <div>
-                  <h4 class="mb-0 fw-bold text-dark">Patient: John Doe | MRN: 98214-A</h4>
-                  <small class="text-muted">Age: 68 | Dominant Hand: Right | Meds: Levodopa 100mg (2 hrs ago) | Session: #14</small>
-              </div>
-              <div class="text-end d-flex align-items-center gap-4">
-                  <div class="text-center">
-                      <div class="fw-bold" style="font-size: 1.5rem;" id="countdown-clock">02:00</div>
-                      <small class="text-muted" id="monitor-status">Monitoring: OFF</small>
-                  </div>
-                  <div>
-                      <span id="conn-indicator" class="dot bg-danger me-2"></span><span id="conn-text" class="fw-bold text-danger">Disconnected</span>
-                  </div>
-                  <button class="btn btn-lg text-white px-4 fw-bold" style="background-color: var(--med-teal);" id="btn-start" onclick="startMonitoring()">Start Now</button>
-                  <button class="btn btn-lg btn-danger px-4 fw-bold" style="display: none;" id="btn-stop" onclick="stopMonitoring()">Stop Now</button>
-                  <button class="btn btn-lg btn-outline-secondary px-4 fw-bold" style="display: none;" id="btn-download" onclick="generateReport()">Download Report</button>
-              </div>
-          </div>
+  <!-- ══ PATIENT BAR ════════════════════════════════════ -->
+  <div class="ns-card mb-3 p-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div id="avatar-circ" style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--teal),var(--teal2));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1.15rem;flex-shrink:0;">—</div>
+      <div>
+        <div class="section-label mb-0">Active Patient</div>
+        <div id="pt-name"  style="font-weight:700;font-size:1rem;color:#1e293b;">Select a patient</div>
+        <div id="pt-meta"  style="font-size:0.75rem;color:var(--muted);">—</div>
       </div>
+      <div class="patient-wrap">
+        <select id="patient-select" onchange="onPatientChange(this)">
+          <option value="">— Choose Patient —</option>
+        </select>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="text-center">
+        <div id="countdown-clock" style="font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;color:#1e293b;">02:00</div>
+        <div id="monitor-status" style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);">Monitoring Off</div>
+      </div>
+      <button id="btn-start"  class="ns-btn ns-btn-primary" onclick="startMonitoring()">▶ Start Session</button>
+      <button id="btn-stop"   class="ns-btn ns-btn-stop" style="display:none" onclick="stopMonitoring()">■ Stop</button>
+      <button id="btn-report" class="ns-btn ns-btn-ghost" style="display:none" onclick="generateReport()">⬇ Report</button>
+    </div>
   </div>
 
-  <!-- SECTION 2: LIVE DIAGNOSTICS SUMMARY ROW -->
-  <div class="row mb-4 g-3">
-      <div class="col-md-2">
-          <div class="stat-card">
-              <h6 class="text-muted text-uppercase mb-1">UPDRS Motor Score</h6>
-              <div class="stat-value" id="val-updrs">--</div>
-              <small class="fw-bold" id="label-updrs">Calibrating...</small>
-          </div>
-      </div>
-      <div class="col-md-2">
-          <div class="stat-card">
-              <h6 class="text-muted text-uppercase mb-1">Tremor Amplitude</h6>
-              <div class="stat-value" id="val-amp">--</div>
-              <small class="text-muted">m/s²</small>
-          </div>
-      </div>
-      <div class="col-md-2">
-          <div class="stat-card">
-              <h6 class="text-muted text-uppercase mb-1">Tremor Frequency</h6>
-              <div class="stat-value" id="val-freq">--</div>
-              <small class="text-muted">Rest tremor range: 4-6 Hz</small>
-          </div>
-      </div>
-      <div class="col-md-2">
-          <div class="stat-card">
-              <h6 class="text-muted text-uppercase mb-1">Grip Consistency</h6>
-              <div class="stat-value" id="val-emg">--</div>
-              <small class="fw-bold" id="label-emg">Signal Quality</small>
-          </div>
-      </div>
-      <div class="col-md-2">
-          <div class="stat-card">
-              <h6 class="text-muted text-uppercase mb-1">Gyro Activity</h6>
-              <div class="stat-value" id="val-gyro">--</div>
-              <small class="text-muted">deg/s</small>
-          </div>
-      </div>
-      <div class="col-md-2">
-          <div class="stat-card">
-              <h6 class="text-muted text-uppercase mb-1">Session Trend</h6>
-              <div class="stat-value" id="val-trend">--</div>
-              <small class="fw-bold" id="label-trend">vs Session Start</small>
-          </div>
-      </div>
+  <!-- ══ METRIC CARDS ════════════════════════════════════ -->
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-4 col-lg-2"><div class="ns-card p-3 h-100"><div class="ns-metric">
+      <div class="lbl">UPDRS Score</div><div class="val" id="v-updrs">--</div><div class="sub" id="s-updrs">Calibrating…</div>
+    </div></div></div>
+    <div class="col-6 col-md-4 col-lg-2"><div class="ns-card p-3 h-100"><div class="ns-metric">
+      <div class="lbl">Tremor Amplitude</div><div class="val" id="v-amp">--</div><div class="sub">m/s²</div>
+    </div></div></div>
+    <div class="col-6 col-md-4 col-lg-2"><div class="ns-card p-3 h-100"><div class="ns-metric">
+      <div class="lbl">Frequency (FFT)</div><div class="val" id="v-freq">--</div><div class="sub">Rest: 4–6 Hz</div>
+    </div></div></div>
+    <div class="col-6 col-md-4 col-lg-2"><div class="ns-card p-3 h-100"><div class="ns-metric">
+      <div class="lbl">EMG Grip RMS</div><div class="val" id="v-emg">--</div><div class="sub" id="s-emg">Signal quality</div>
+    </div></div></div>
+    <div class="col-6 col-md-4 col-lg-2"><div class="ns-card p-3 h-100"><div class="ns-metric">
+      <div class="lbl">Gyro Activity</div><div class="val" id="v-gyro">--</div><div class="sub">deg/s</div>
+    </div></div></div>
+    <div class="col-6 col-md-4 col-lg-2"><div class="ns-card p-3 h-100"><div class="ns-metric">
+      <div class="lbl">Session Trend</div><div class="val" id="v-trend">--</div><div class="sub" id="s-trend">vs start</div>
+    </div></div></div>
   </div>
 
-  <!-- SECTION 3 & 5: CLASSIFICATION BADGES & CLINICAL FINDINGS -->
-  <div class="row mb-4">
-      <div class="col-md-6 d-flex flex-column justify-content-center align-items-start bg-white p-4 rounded shadow-sm me-3" style="width: calc(50% - 10px);">
-          <h5 class="text-muted text-uppercase mb-3">Motor Classification</h5>
-          <div>
-              <div id="badge-motor" class="badge-classification bg-secondary">Awaiting Data</div>
-              <div id="badge-type" class="badge-classification bg-secondary">Unknown Type</div>
+  <!-- ══ BADGES + FLAGS + CLINICAL ══════════════════════ -->
+  <div class="row g-2 mb-3">
+    <div class="col-lg-4">
+      <div class="ns-card p-3 h-100 d-flex flex-column gap-3">
+        <div>
+          <div class="section-label">Motor Classification</div>
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <span class="badge-pill" style="background:#94a3b8" id="badge-motor">Awaiting Data</span>
+            <span class="badge-pill" style="background:#94a3b8" id="badge-type">No Data</span>
           </div>
-      </div>
-      <div class="col-md-6 bg-white p-0 rounded shadow-sm" style="width: calc(50% - 10px); margin-left: 20px;">
-          <div class="clinical-findings m-0 h-100" id="clinical-panel">
-┌─ CLINICAL FINDINGS ──────────────────────────────────────┐
-│  Awaiting session start...                               │
-└──────────────────────────────────────────────────────────┘
+        </div>
+        <div>
+          <div class="section-label">Clinical Flags</div>
+          <div id="flags-list" style="font-size:0.80rem;color:var(--muted);">Start a session to see analysis.</div>
+        </div>
+        <div class="mt-auto" style="border-top:1px solid var(--border);padding-top:.6rem;">
+          <div class="section-label">Session Stats</div>
+          <div style="font-size:0.78rem;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:#334155;">
+            <span>Samples: <strong id="stat-samples">0</strong></span>
+            <span>Avg Amp: <strong id="stat-avg-amp">--</strong></span>
+            <span>Avg EMG: <strong id="stat-avg-emg">--</strong></span>
+            <span>Peak Hz: <strong id="stat-peak-hz">--</strong></span>
           </div>
+        </div>
       </div>
+    </div>
+    <div class="col-lg-8">
+      <div class="ns-card p-3 h-100">
+        <div class="section-label">Clinical Findings</div>
+        <div class="clinical-box" id="clinical-panel">Awaiting session start…</div>
+      </div>
+    </div>
   </div>
 
-  <!-- SECTION 4: FOUR CHARTS -->
-  <div class="row g-4 mb-4">
-      <div class="col-md-6">
-          <div class="bg-white p-3 rounded shadow-sm h-100">
-              <canvas id="chart-fft" style="height: 250px;"></canvas>
-          </div>
+  <!-- ══ CHARTS ══════════════════════════════════════════ -->
+  <div class="row g-2 mb-3">
+    <div class="col-md-6">
+      <div class="ns-card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="section-label mb-0">Tremor Frequency Spectrum (FFT)</div>
+          <button class="ns-btn ns-btn-ghost" style="padding:3px 10px;font-size:0.72rem;" onclick="exportChart('chart-fft','fft_spectrum')">⬇ PNG</button>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-fft"></canvas></div>
+        <div class="chart-ts" id="ts-fft">—</div>
       </div>
-      <div class="col-md-6">
-          <div class="bg-white p-3 rounded shadow-sm h-100">
-              <canvas id="chart-amp" style="height: 250px;"></canvas>
-          </div>
+    </div>
+    <div class="col-md-6">
+      <div class="ns-card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="section-label mb-0">Tremor Amplitude — Full Session (m/s²)</div>
+          <button class="ns-btn ns-btn-ghost" style="padding:3px 10px;font-size:0.72rem;" onclick="exportChart('chart-amp','tremor_amplitude')">⬇ PNG</button>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-amp"></canvas></div>
+        <div class="chart-ts" id="ts-amp">—</div>
       </div>
-      <div class="col-md-6">
-          <div class="bg-white p-3 rounded shadow-sm h-100">
-              <canvas id="chart-emg" style="height: 250px;"></canvas>
-          </div>
+    </div>
+    <div class="col-md-6">
+      <div class="ns-card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="section-label mb-0">EMG Muscle Activation — Last 20 Samples</div>
+          <button class="ns-btn ns-btn-ghost" style="padding:3px 10px;font-size:0.72rem;" onclick="exportChart('chart-emg','emg_activation')">⬇ PNG</button>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-emg"></canvas></div>
+        <div class="chart-ts" id="ts-emg">—</div>
       </div>
-      <div class="col-md-6">
-          <div class="bg-white p-3 rounded shadow-sm h-100">
-              <canvas id="chart-axis" style="height: 250px;"></canvas>
-          </div>
+    </div>
+    <div class="col-md-6">
+      <div class="ns-card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="section-label mb-0">Acceleration by Axis — gravity removed (m/s²)</div>
+          <button class="ns-btn ns-btn-ghost" style="padding:3px 10px;font-size:0.72rem;" onclick="exportChart('chart-axis','axis_decomposition')">⬇ PNG</button>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-axis"></canvas></div>
+        <div class="chart-ts" id="ts-axis">—</div>
       </div>
+    </div>
   </div>
+
+  <!-- ══ COLLAPSIBLE READINGS TABLE ══════════════════════ -->
+  <div class="mb-4">
+    <button class="ns-btn ns-btn-ghost mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#readings-collapse">
+      📋 Show / Hide Raw Readings Table
+    </button>
+    <div class="collapse" id="readings-collapse">
+      <div class="ns-card">
+        <div style="max-height:280px;overflow-y:auto;">
+          <table class="table table-sm table-striped readings-table mb-0">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>EMG RMS %</th>
+                <th>Acc X</th><th>Acc Y</th><th>Acc Z</th>
+                <th>Gyro mag</th>
+                <th>Roll</th><th>Pitch</th>
+              </tr>
+            </thead>
+            <tbody id="readings-tbody"></tbody>
+          </table>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted);padding:.6rem 1rem;">All values in physical units (m/s², deg/s, degrees)</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // CONSTANTS
-  const API_URL = "/api/sensor-data/list/?limit=200";
-  const SESSION_DURATION_SEC = 120;
-  const ACC_LSB_PER_G = 16384.0;
-  const GYRO_LSB_PER_DPS = 131.0;
-  const G_TO_MS2 = 9.81;
+// ════════════════════════════════════════════════
+//  CONFIG
+// ════════════════════════════════════════════════
+const API_URL      = "/api/sensor-data/list/?limit=200";
+const PATIENTS_API = "/api/patients/";
+const SESSION_SECS = 120;
+const ACC_LSB      = 16384.0;
+const GYRO_LSB     = 131.0;
+const G            = 9.81;
 
-  // STATE
-  let monitoring = false;
-  let monitorIntervalId = null;
-  let countdownTimerId = null;
-  let countdown = SESSION_DURATION_SEC;
-  let sessionStartTime = null;
-  let sessionData = [];
-  let sessionIdSet = new Set();
-  
-  // CHARTS
-  let chartFFT, chartAmp, chartEMG, chartAxis;
+// ════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════
+let monitoring = false, monitorId = null, previewId = null, countdownId = null;
+let countdown  = SESSION_SECS;
+let sessionStart = null;
+let sessionData  = [], sessionIds = new Set();
+let selectedPatient = null;
+let chartFFT, chartAmp, chartEMG, chartAxis;
+let gBase = {x:0, y:0, z:0};   // gravity baseline, set on first 10 samples
 
-  // HELPERS
-  const toAccMs2 = (raw) => (raw / ACC_LSB_PER_G) * G_TO_MS2;
-  const toGyroDps = (raw) => raw / GYRO_LSB_PER_DPS;
-  const formatTime = (sec) => `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`;
+// ════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════
+const toAccMs2  = r => (r / ACC_LSB) * G;
+const toGyroDps = r => r / GYRO_LSB;
+const fmt       = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+const avg       = a => a.length ? a.reduce((s,v)=>s+v,0)/a.length : 0;
+const ampOf     = r => {
+  const cx=toAccMs2(r.acc_x)-gBase.x, cy=toAccMs2(r.acc_y)-gBase.y, cz=toAccMs2(r.acc_z)-gBase.z;
+  return Math.sqrt(cx*cx+cy*cy+cz*cz);
+};
 
-  function computeDFT(samples) {
-      const N = samples.length;
-      const result = [];
-      for (let k = 0; k < N/2; k++) {
-          let real = 0, imag = 0;
-          for (let n = 0; n < N; n++) {
-              const angle = (2 * Math.PI * k * n) / N;
-              real += samples[n] * Math.cos(angle);
-              imag -= samples[n] * Math.sin(angle);
-          }
-          result.push(Math.sqrt(real*real + imag*imag));
-      }
-      return result;
+function computeDFT(samples) {
+  if (!samples || samples.length < 4) return []; // guard
+  const N = samples.length, out = [];
+  for (let k = 0; k < N/2; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const a = (2*Math.PI*k*n)/N;
+      re += samples[n]*Math.cos(a);
+      im -= samples[n]*Math.sin(a);
+    }
+    out.push(Math.sqrt(re*re+im*im));
   }
+  return out;
+}
 
-  function initCharts() {
-      const commonOptions = { responsive: true, maintainAspectRatio: false, animation: false };
-      
-      chartFFT = new Chart(document.getElementById('chart-fft').getContext('2d'), {
-          type: 'line',
-          data: { labels: [], datasets: [{ label: 'Power', data: [], borderColor: '#1a6b5a', fill: true, backgroundColor: 'rgba(26,107,90,0.2)', borderWidth: 2, pointRadius: 0 }] },
-          options: { ...commonOptions, plugins: { title: { display: true, text: 'Tremor Frequency Spectrum (FFT)' } }, scales: { x: { title: { display: true, text: 'Frequency (Hz)' } } } }
-      });
+// ════════════════════════════════════════════════
+//  PATIENT SWITCHER
+// ════════════════════════════════════════════════
+async function loadPatients() {
+  try {
+    const list = await fetch(PATIENTS_API).then(r=>r.json());
+    const sel  = document.getElementById('patient-select');
+    list.forEach(p => {
+      const o = document.createElement('option');
+      o.value = JSON.stringify(p);
+      o.textContent = `${p.name}  (${p.patient_id})`;
+      sel.appendChild(o);
+    });
+  } catch(e) { console.warn('Patient load failed', e); }
+}
 
-      chartAmp = new Chart(document.getElementById('chart-amp').getContext('2d'), {
-          type: 'line',
-          data: { labels: [], datasets: [{ label: 'Amplitude (m/s²)', data: [], borderColor: '#dc2626', borderWidth: 2, pointRadius: 0 }] },
-          options: { ...commonOptions, plugins: { title: { display: true, text: 'Tremor Amplitude (m/s²) — Full Session' } }, scales: { y: { min: 0 } } }
-      });
+function onPatientChange(sel) {
+  if (!sel.value) { selectedPatient=null; resetPatientUI(); return; }
+  try {
+    const p = JSON.parse(sel.value);
+    selectedPatient = p;
+    document.getElementById('pt-name').textContent = p.name;
+    document.getElementById('avatar-circ').textContent = p.name.charAt(0).toUpperCase();
+    const parts = [p.age?`Age ${p.age}`:'', p.gender||'', p.diagnosis?`· ${p.diagnosis}`:''].filter(Boolean);
+    document.getElementById('pt-meta').textContent = parts.join(' ') || p.patient_id;
+  } catch(e) {}
+}
 
-      chartEMG = new Chart(document.getElementById('chart-emg').getContext('2d'), {
-          type: 'bar',
-          data: { labels: [], datasets: [{ label: 'EMG RMS %', data: [], backgroundColor: '#ea580c' }] },
-          options: { ...commonOptions, plugins: { title: { display: true, text: 'EMG Muscle Activation — Last 20 Samples' } }, scales: { y: { min: 0, max: 100 } } }
-      });
+function resetPatientUI() {
+  document.getElementById('pt-name').textContent = 'Select a patient';
+  document.getElementById('pt-meta').textContent = '—';
+  document.getElementById('avatar-circ').textContent = '—';
+}
 
-      chartAxis = new Chart(document.getElementById('chart-axis').getContext('2d'), {
-          type: 'line',
-          data: { labels: [], datasets: [
-              { label: 'Acc X', data: [], borderColor: '#3b82f6', borderWidth: 1, pointRadius: 0 },
-              { label: 'Acc Y', data: [], borderColor: '#16a34a', borderWidth: 1, pointRadius: 0 },
-              { label: 'Acc Z', data: [], borderColor: '#dc2626', borderWidth: 1, pointRadius: 0 }
-          ]},
-          options: { ...commonOptions, plugins: { title: { display: true, text: 'Acceleration by Axis (gravity removed)' } }, scales: { y: { min: -2, max: 2 } } }
-      });
-  }
+// ════════════════════════════════════════════════
+//  CHARTS
+// ════════════════════════════════════════════════
+function initCharts() {
+  const ticks = { font:{size:10}, maxTicksLimit:8, color:'#94a3b8' };
+  const legend = { display:true, labels:{ font:{family:'Inter',size:10}, boxWidth:10, color:'#64748b' } };
 
-  function startMonitoring() {
-      if (monitoring) return;
-      monitoring = true;
-      sessionData = [];
-      sessionIdSet = new Set();
-      sessionStartTime = new Date();
-      countdown = SESSION_DURATION_SEC;
-      
-      document.getElementById('btn-start').style.display = 'none';
-      document.getElementById('btn-stop').style.display = 'block';
-      document.getElementById('btn-download').style.display = 'none';
-      document.getElementById('monitor-status').innerText = 'Monitoring: ON';
-      document.getElementById('conn-indicator').className = 'dot bg-success me-2';
-      document.getElementById('conn-text').className = 'fw-bold text-success';
-      document.getElementById('conn-text').innerText = 'Connected';
-
-      monitorIntervalId = setInterval(fetchData, 1000);
-      countdownTimerId = setInterval(() => {
-          countdown--;
-          document.getElementById('countdown-clock').innerText = formatTime(Math.max(0, countdown));
-          if (countdown <= 0) stopMonitoring();
-      }, 1000);
-      fetchData();
-  }
-
-  function stopMonitoring() {
-      monitoring = false;
-      clearInterval(monitorIntervalId);
-      clearInterval(countdownTimerId);
-      document.getElementById('btn-stop').style.display = 'none';
-      document.getElementById('btn-download').style.display = 'block';
-      document.getElementById('monitor-status').innerText = 'Monitoring: OFF';
-      document.getElementById('conn-indicator').className = 'dot bg-secondary me-2';
-      document.getElementById('conn-text').className = 'fw-bold text-secondary';
-      document.getElementById('conn-text').innerText = 'Session Ended';
-  }
-
-  async function fetchData() {
-      try {
-          const res = await fetch(API_URL);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-          // Show connected status on successful fetch
-          document.getElementById('conn-indicator').className = 'dot bg-success me-2';
-          document.getElementById('conn-text').className = 'fw-bold text-success';
-          document.getElementById('conn-text').innerText = 'Live';
-          processData(data);
-      } catch (e) {
-          console.error(e);
-          document.getElementById('conn-indicator').className = 'dot bg-danger me-2';
-          document.getElementById('conn-text').className = 'fw-bold text-danger';
-          document.getElementById('conn-text').innerText = 'Connection Lost';
-      }
-  }
-
-  function processData(apiData) {
-      if (!apiData || apiData.length === 0) return;
-
-      // Sort descending from API, reverse to ascending for processing
-      const sorted = [...apiData].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-      if (!sessionStartTime) {
-          // PRE-SESSION: show latest single reading as live preview on cards
-          const latest = sorted[sorted.length - 1];
-          if (!latest) return;
-          // Update gyro card live even before session
-          const gx = toGyroDps(latest.gyro_x||0), gy = toGyroDps(latest.gyro_y||0), gz = toGyroDps(latest.gyro_z||0);
-          const gyroMag = Math.sqrt(gx*gx + gy*gy + gz*gz);
-          document.getElementById('val-gyro').innerText = gyroMag.toFixed(1);
-          document.getElementById('val-gyro').style.color = gyroMag < 5 ? 'var(--med-green)' : (gyroMag <= 30 ? 'var(--med-orange)' : 'var(--med-red)');
-          const emgPct = latest.emg_rms_pct || 0;
-          document.getElementById('val-emg').innerText = emgPct.toFixed(1) + "%";
-          document.getElementById('val-emg').style.color = emgPct < 1 ? 'var(--med-red)' : (emgPct <= 20 ? 'var(--med-orange)' : 'var(--med-green)');
-          document.getElementById('label-emg').innerText = emgPct < 1 ? "⚠ Weak / No Signal" : "Good Signal";
-          return;
-      }
-
-      // SESSION ACTIVE: accumulate data since session start
-      sorted.forEach(r => {
-          if (!r.id) return;
-          const t = new Date(r.timestamp);
-          if (t >= sessionStartTime && !sessionIdSet.has(r.id)) {
-              sessionIdSet.add(r.id);
-              sessionData.push(r);
-          }
-      });
-      sessionData.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-      if (sessionData.length === 0) return;
-
-      const latest = sessionData[sessionData.length - 1];
-      const last50 = sessionData.slice(-50);
-      const last20 = sessionData.slice(-20);
-
-      // Baseline gravity extraction (fallback)
-      const first10 = sessionData.slice(0, 10);
-      let gBase = { x: 0, y: 0, z: 0 };
-      if (first10.length > 0) {
-          gBase.x = first10.reduce((s,r) => s + toAccMs2(r.acc_x), 0) / first10.length;
-          gBase.y = first10.reduce((s,r) => s + toAccMs2(r.acc_y), 0) / first10.length;
-          gBase.z = first10.reduce((s,r) => s + toAccMs2(r.acc_z), 0) / first10.length;
-      }
-
-      // Card 2: Amplitude
-      let ampSum = 0;
-      let last10 = sessionData.slice(-10);
-      last10.forEach(r => {
-          let cx = toAccMs2(r.acc_x) - gBase.x;
-          let cy = toAccMs2(r.acc_y) - gBase.y;
-          let cz = toAccMs2(r.acc_z) - gBase.z;
-          ampSum += Math.sqrt(cx*cx + cy*cy + cz*cz);
-      });
-      const currentAmp = last10.length > 0 ? ampSum / last10.length : 0;
-      const elAmp = document.getElementById('val-amp');
-      elAmp.innerText = currentAmp.toFixed(3);
-      elAmp.style.color = currentAmp < 0.1 ? 'var(--med-green)' : (currentAmp < 0.5 ? 'var(--med-orange)' : 'var(--med-red)');
-
-      // Card 1: Frequency & FFT Chart
-      let zCleanArray = last50.map(r => toAccMs2(r.acc_z) - gBase.z);
-      let fft = computeDFT(zCleanArray);
-      let maxPower = 0;
-      let maxBinIdx = 0;
-      for (let i = 1; i < fft.length; i++) { 
-          if(fft[i] > maxPower) { maxPower = fft[i]; maxBinIdx = i; }
-      }
-      const hzPerBin = 50.0 / last50.length;
-      const domFreq = maxBinIdx * hzPerBin;
-      
-      const elFreq = document.getElementById('val-freq');
-      if (currentAmp < 0.05) {
-          elFreq.innerText = "N/A"; elFreq.style.color = 'var(--med-green)';
-      } else {
-          elFreq.innerText = domFreq.toFixed(1);
-          elFreq.style.color = domFreq < 2 ? 'var(--med-green)' : (domFreq <= 6 ? 'var(--med-orange)' : 'var(--med-red)');
-      }
-
-      chartFFT.data.labels = fft.map((_, i) => (i * hzPerBin).toFixed(1));
-      chartFFT.data.datasets[0].data = fft;
-      chartFFT.update();
-
-      // Card 3: UPDRS Score
-      let updrs = 0;
-      let uColor = 'var(--med-green)', uLabel = "Absent";
-      if (currentAmp >= 0.6) { updrs = 4; uColor = 'var(--med-darkred)'; uLabel = "Marked"; }
-      else if (currentAmp >= 0.35) { updrs = 3; uColor = 'var(--med-red)'; uLabel = "Moderate"; }
-      else if (currentAmp >= 0.15) { updrs = 2; uColor = 'var(--med-orange)'; uLabel = "Mild"; }
-      else if (currentAmp >= 0.05) { updrs = 1; uColor = 'var(--med-yellow)'; uLabel = "Slight"; }
-      
-      const elUpdrs = document.getElementById('val-updrs');
-      elUpdrs.innerText = updrs; elUpdrs.style.color = uColor;
-      document.getElementById('label-updrs').innerText = uLabel;
-
-      // Card 4: EMG
-      const emgPct = latest.emg_rms_pct || 0;
-      const elEmg = document.getElementById('val-emg');
-      elEmg.innerText = emgPct.toFixed(1) + "%";
-      elEmg.style.color = emgPct < 1 ? 'var(--med-red)' : (emgPct <= 20 ? 'var(--med-orange)' : 'var(--med-green)');
-      document.getElementById('label-emg').innerText = emgPct < 1 ? "⚠ Weak / No Signal" : "Good Signal";
-
-      // Card 5: Gyro
-      const gx = toGyroDps(latest.gyro_x), gy = toGyroDps(latest.gyro_y), gz = toGyroDps(latest.gyro_z);
-      const gyroMag = Math.sqrt(gx*gx + gy*gy + gz*gz);
-      const elGyro = document.getElementById('val-gyro');
-      elGyro.innerText = gyroMag.toFixed(1);
-      elGyro.style.color = gyroMag < 5 ? 'var(--med-green)' : (gyroMag <= 30 ? 'var(--med-orange)' : 'var(--med-red)');
-
-      // Card 6: Trend
-      let trendText = "--", tColor = "black";
-      if (sessionData.length > 40) {
-          let first20 = sessionData.slice(0, 20);
-          let sumF = 0;
-          first20.forEach(r => { let cx = toAccMs2(r.acc_x)-gBase.x, cy = toAccMs2(r.acc_y)-gBase.y, cz = toAccMs2(r.acc_z)-gBase.z; sumF += Math.sqrt(cx*cx+cy*cy+cz*cz); });
-          let baseAmp = sumF / 20;
-          let diff = currentAmp - baseAmp;
-          if (diff > 0.05) { trendText = `↑ +${((diff/baseAmp)*100).toFixed(0)}%`; tColor = 'var(--med-red)'; }
-          else if (diff < -0.05) { trendText = `↓ ${((diff/baseAmp)*100).toFixed(0)}%`; tColor = 'var(--med-green)'; }
-          else { trendText = `→ Stable`; tColor = 'var(--med-orange)'; }
-      }
-      document.getElementById('val-trend').innerText = trendText;
-      document.getElementById('val-trend').style.color = tColor;
-
-      // Badges
-      const bMotor = document.getElementById('badge-motor');
-      const bType = document.getElementById('badge-type');
-      if (updrs <= 1) { bMotor.innerText = "Normal"; bMotor.className = "badge-classification bg-success"; }
-      else if (updrs == 2) { bMotor.innerText = "Mild Tremor"; bMotor.className = "badge-classification bg-warning text-dark"; }
-      else if (updrs == 3) { bMotor.innerText = "Abnormal Tremor"; bMotor.className = "badge-classification bg-orange text-white"; bMotor.style.backgroundColor = "var(--med-orange)"; }
-      else { bMotor.innerText = "Severe Tremor"; bMotor.className = "badge-classification bg-danger"; }
-
-      if (currentAmp < 0.05) { bType.innerText = "No Tremor"; bType.className = "badge-classification bg-success"; }
-      else if (domFreq >= 3 && domFreq <= 6) { bType.innerText = "Rest Tremor"; bType.className = "badge-classification bg-danger"; }
-      else if (domFreq > 6 && domFreq <= 12) { bType.innerText = "Essential Tremor"; bType.className = "badge-classification bg-warning text-dark"; }
-      else { bType.innerText = "Unclassified Tremor"; bType.className = "badge-classification bg-secondary"; }
-
-      // Update Charts
-      chartAmp.data.labels = sessionData.map(r => ((new Date(r.timestamp) - sessionStartTime)/1000).toFixed(1));
-      chartAmp.data.datasets[0].data = sessionData.map(r => {
-          let cx = toAccMs2(r.acc_x)-gBase.x, cy = toAccMs2(r.acc_y)-gBase.y, cz = toAccMs2(r.acc_z)-gBase.z;
-          return Math.sqrt(cx*cx+cy*cy+cz*cz);
-      });
-      chartAmp.update();
-
-      chartEMG.data.labels = last20.map(r => new Date(r.timestamp).toLocaleTimeString());
-      chartEMG.data.datasets[0].data = last20.map(r => r.emg_rms_pct || 0);
-      chartEMG.data.datasets[0].backgroundColor = last20.map(r => (r.emg_rms_pct||0) > 5 ? 'var(--med-green)' : '#ccc');
-      chartEMG.update();
-
-      let last30 = sessionData.slice(-30);
-      chartAxis.data.labels = last30.map(r => new Date(r.timestamp).toLocaleTimeString());
-      chartAxis.data.datasets[0].data = last30.map(r => toAccMs2(r.acc_x) - gBase.x);
-      chartAxis.data.datasets[1].data = last30.map(r => toAccMs2(r.acc_y) - gBase.y);
-      chartAxis.data.datasets[2].data = last30.map(r => toAccMs2(r.acc_z) - gBase.z);
-      chartAxis.update();
-
-      // Clinical Findings
-      let flags = [];
-      if (updrs >= 3) flags.push("⚠ High tremor severity — consider neurologist referral");
-      if (domFreq >= 4 && domFreq <= 6 && currentAmp > 0.15) flags.push("⚠ Pattern consistent with Parkinson's rest tremor");
-      if (domFreq > 6 && domFreq <= 12) flags.push("ℹ Pattern consistent with essential tremor");
-      if (emgPct < 1.0) flags.push("⚠ EMG signal too weak — verify electrode contact");
-      if (flags.length === 0) flags.push("✓ No significant clinical flags detected");
-
-      let typeStr = "None";
-      if (currentAmp >= 0.05) typeStr = (domFreq <= 6) ? "Rest Tremor" : "Essential";
-
-      document.getElementById('clinical-panel').innerText = `┌─ CLINICAL FINDINGS ──────────────────────────────────────┐
-│                                                          │
-│  Tremor Analysis:                                        │
-│    Dominant frequency: ${domFreq.toFixed(1)} Hz                            │
-│    Classification:     ${typeStr}                          │
-│    Peak amplitude:     ${currentAmp.toFixed(3)} m/s²                         │
-│                                                          │
-│  Grip Assessment:                                        │
-│    Mean activation:    ${emgPct.toFixed(1)}%                               │
-│    Signal quality:     ${emgPct < 1 ? "Weak ⚠" : "Good"}                             │
-│                                                          │
-│  UPDRS Estimate:       ${updrs}/4 — ${uLabel}                         │
-│                                                          │
-│  Clinical Flags:                                         │
-${flags.map(f => '│    ' + f).join('\n')}
-│                                                          │
-└───────────────────────────────────────────────────────────┘`;
-  }
-
-  function generateReport() {
-      const w = window.open();
-      w.document.write(`
-          <title>NeuroSense Clinical Report</title>
-          <style>body{font-family:sans-serif; padding:40px; color:#333; line-height:1.6;} img{max-width:45%; margin:10px; border:1px solid #ddd;}</style>
-          <h1>NeuroSense Clinical Report</h1>
-          <p><strong>Patient:</strong> John Doe (MRN: 98214-A)</p>
-          <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
-          <p><strong>Duration:</strong> ${SESSION_DURATION_SEC} sec | <strong>Samples:</strong> ${sessionData.length}</p>
-          <hr>
-          <h3>Summary</h3>
-          <pre>${document.getElementById('clinical-panel').innerText}</pre>
-          <hr>
-          <h3>Visual Analytics</h3>
-          <div>
-              <img src="${document.getElementById('chart-fft').toDataURL()}" />
-              <img src="${document.getElementById('chart-amp').toDataURL()}" />
-          </div>
-          <br><br><br>
-          <p>_____________________________________</p>
-          <p>Physician Signature</p>
-          <p><small>Generated by NeuroSense v2.0 — For clinical reference only</small></p>
-      `);
-      w.document.close();
-      setTimeout(() => { w.print(); }, 500);
-  }
-
-  // Start background poll immediately on load (pre-session live preview)
-  let previewIntervalId = null;
-  window.onload = () => {
-      initCharts();
-      fetchData(); // immediate first check
-      previewIntervalId = setInterval(() => {
-          if (!monitoring) fetchData(); // keep polling until session starts
-      }, 2000);
+  // AUTO-SCALE Y: do NOT set min/max — Chart.js will auto-fit
+  const base = {
+    responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{ legend },
+    scales:{
+      x:{ ticks, grid:{color:'#f1f5f9'}, border:{display:false} },
+      y:{ ticks, grid:{color:'#f1f5f9'}, border:{display:false} }
+      // NO min/max here — auto-scale so high values are always visible
+    }
   };
+
+  chartFFT = new Chart(document.getElementById('chart-fft').getContext('2d'), {
+    type:'line',
+    data:{ labels:[], datasets:[{
+      label:'Power', data:[], borderColor:'#0b6677',
+      backgroundColor:'rgba(11,102,119,.12)', borderWidth:2, pointRadius:0, fill:true, tension:.3
+    }]},
+    options:{ ...base, plugins:{...base.plugins, title:{display:false}} }
+  });
+
+  chartAmp = new Chart(document.getElementById('chart-amp').getContext('2d'), {
+    type:'line',
+    data:{ labels:[], datasets:[{
+      label:'Amplitude m/s²', data:[], borderColor:'#dc2626',
+      backgroundColor:'rgba(220,38,38,.08)', borderWidth:2, pointRadius:0, fill:true, tension:.3
+    }]},
+    options:{ ...base }
+  });
+
+  chartEMG = new Chart(document.getElementById('chart-emg').getContext('2d'), {
+    type:'bar',
+    data:{ labels:[], datasets:[{
+      label:'EMG RMS %', data:[], backgroundColor:'rgba(11,102,119,.7)', borderRadius:4
+    }]},
+    options:{
+      ...base,
+      // EMG is percent so we DO want 0 baseline but still auto-scale max
+      scales:{ x:{ ...base.scales.x }, y:{ ...base.scales.y, min:0 } }
+    }
+  });
+
+  chartAxis = new Chart(document.getElementById('chart-axis').getContext('2d'), {
+    type:'line',
+    data:{ labels:[], datasets:[
+      { label:'X', data:[], borderColor:'#3b82f6', borderWidth:1.5, pointRadius:0, tension:.3 },
+      { label:'Y', data:[], borderColor:'#16a34a', borderWidth:1.5, pointRadius:0, tension:.3 },
+      { label:'Z', data:[], borderColor:'#dc2626', borderWidth:1.5, pointRadius:0, tension:.3 }
+    ]},
+    options:{ ...base }  // fully auto-scaled, zero reference line from data
+  });
+}
+
+// ════════════════════════════════════════════════
+//  SESSION MANAGEMENT
+// ════════════════════════════════════════════════
+function startMonitoring() {
+  if (monitoring) return;
+  monitoring   = true;
+  sessionData  = [];
+  sessionIds   = new Set();
+  sessionStart = new Date();
+  countdown    = SESSION_SECS;
+  gBase        = {x:0, y:0, z:0}; // reset gravity baseline
+
+  clearInterval(previewId);
+
+  document.getElementById('btn-start').style.display  = 'none';
+  document.getElementById('btn-stop').style.display   = 'inline-flex';
+  document.getElementById('btn-report').style.display = 'none';
+  document.getElementById('monitor-status').textContent = 'Monitoring ON';
+
+  monitorId   = setInterval(fetchData, 1000);
+  countdownId = setInterval(()=>{
+    countdown--;
+    document.getElementById('countdown-clock').textContent = fmt(Math.max(0,countdown));
+    if (countdown<=0) stopMonitoring();
+  }, 1000);
+  fetchData();
+}
+
+function stopMonitoring() {
+  clearInterval(monitorId);
+  clearInterval(countdownId);
+  monitoring = false;
+
+  document.getElementById('btn-stop').style.display   = 'none';
+  document.getElementById('btn-start').style.display  = 'inline-flex';
+  document.getElementById('btn-report').style.display = 'inline-flex';
+  document.getElementById('monitor-status').textContent = 'Session Ended';
+
+  // restart light preview poll
+  previewId = setInterval(()=>{ if(!monitoring) fetchData(); }, 2000);
+}
+
+// ════════════════════════════════════════════════
+//  FETCH
+// ════════════════════════════════════════════════
+async function fetchData() {
+  try {
+    const res  = await fetch(API_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    setConn(true);
+    if (data && data.length) {
+      // show last timestamp in topbar always
+      const latest = data[0]; // API returns newest first
+      document.getElementById('last-timestamp').textContent =
+        'Last reading: ' + new Date(latest.timestamp).toLocaleTimeString();
+    }
+    processData(data);
+  } catch(e) {
+    setConn(false);
+  }
+}
+
+function setConn(ok) {
+  document.getElementById('conn-dot').style.background = ok ? '#16a34a' : '#dc2626';
+  document.getElementById('conn-text').textContent = ok ? 'Live' : 'Disconnected';
+}
+
+// ════════════════════════════════════════════════
+//  PROCESS
+// ════════════════════════════════════════════════
+function processData(apiData) {
+  if (!apiData || !apiData.length) return;
+  // API returns newest-first; sort to ascending for processing
+  const sorted = [...apiData].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+
+  if (!sessionStart) {
+    // PRE-SESSION: just update live EMG/gyro preview cards
+    const lat = sorted[sorted.length-1];
+    if (!lat) return;
+    const gx=toGyroDps(lat.gyro_x||0), gy=toGyroDps(lat.gyro_y||0), gz=toGyroDps(lat.gyro_z||0);
+    setCard('v-gyro', Math.sqrt(gx*gx+gy*gy+gz*gz).toFixed(1), null, null);
+    setCard('v-emg', (lat.emg_rms_pct||0).toFixed(1)+'%', null, null);
+    return;
+  }
+
+  // Accumulate session data
+  sorted.forEach(r=>{
+    if (!r.id) return;
+    const t = new Date(r.timestamp);
+    if (t >= sessionStart && !sessionIds.has(r.id)) {
+      sessionIds.add(r.id);
+      sessionData.push(r);
+    }
+  });
+  sessionData.sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  if (!sessionData.length) return;
+
+  // Gravity baseline from first 10 samples (update once we have enough)
+  if (sessionData.length >= 10 && gBase.x === 0 && gBase.y === 0 && gBase.z === 0) {
+    const f10 = sessionData.slice(0,10);
+    gBase = {
+      x: avg(f10.map(r=>toAccMs2(r.acc_x))),
+      y: avg(f10.map(r=>toAccMs2(r.acc_y))),
+      z: avg(f10.map(r=>toAccMs2(r.acc_z)))
+    };
+  }
+
+  const latest = sessionData[sessionData.length-1];
+  const last50 = sessionData.slice(-50);
+  const last20 = sessionData.slice(-20);
+  const last10 = sessionData.slice(-10);
+
+  // ── AMPLITUDE ────────────────────────────────
+  const currentAmp = avg(last10.map(ampOf));
+
+  // ── FFT ──────────────────────────────────────
+  const fftInput = last50.map(r=>toAccMs2(r.acc_z)-gBase.z);
+  const fft      = computeDFT(fftInput);
+  let maxP=0, maxK=0;
+  for (let i=1;i<fft.length;i++) if(fft[i]>maxP){ maxP=fft[i]; maxK=i; }
+  const hzPerBin = last50.length > 0 ? 50.0/last50.length : 0;
+  const domFreq  = maxK * hzPerBin;
+
+  // ── UPDRS ─────────────────────────────────────
+  let updrs=0, uLabel='Absent', uColor='var(--green)';
+  if      (currentAmp>=0.6)  { updrs=4; uLabel='Marked';   uColor='var(--darkred)'; }
+  else if (currentAmp>=0.35) { updrs=3; uLabel='Moderate'; uColor='var(--red)'; }
+  else if (currentAmp>=0.15) { updrs=2; uLabel='Mild';     uColor='var(--orange)'; }
+  else if (currentAmp>=0.05) { updrs=1; uLabel='Slight';   uColor='var(--yellow)'; }
+
+  // ── EMG ───────────────────────────────────────
+  const emgPct = latest.emg_rms_pct || 0;
+
+  // ── GYRO ──────────────────────────────────────
+  const gx=toGyroDps(latest.gyro_x||0), gy=toGyroDps(latest.gyro_y||0), gz=toGyroDps(latest.gyro_z||0);
+  const gyroMag = Math.sqrt(gx*gx+gy*gy+gz*gz);
+
+  // ── TREND ─────────────────────────────────────
+  let trendTxt='--', trendColor='#1e293b';
+  if (sessionData.length > 40) {
+    const baseAmp = avg(sessionData.slice(0,20).map(ampOf));
+    if (baseAmp > 0) {
+      const diff = currentAmp - baseAmp;
+      if      (diff> 0.05) { trendTxt=`↑ +${((diff/baseAmp)*100).toFixed(0)}%`; trendColor='var(--red)'; }
+      else if (diff<-0.05) { trendTxt=`↓ ${((diff/baseAmp)*100).toFixed(0)}%`;  trendColor='var(--green)'; }
+      else                 { trendTxt='→ Stable'; trendColor='var(--yellow)'; }
+    }
+  }
+
+  // ── UPDATE METRIC CARDS ───────────────────────
+  setCard('v-updrs', updrs, uLabel, uColor, 's-updrs');
+  setCard('v-amp',   currentAmp.toFixed(3),
+    currentAmp<0.1?'No tremor':currentAmp<0.35?'Mild':currentAmp<0.6?'Moderate':'Severe',
+    currentAmp<0.1?'var(--green)':currentAmp<0.35?'var(--yellow)':currentAmp<0.6?'var(--orange)':'var(--red)');
+  setCard('v-freq',
+    currentAmp<0.05?'N/A':domFreq.toFixed(1)+' Hz',
+    currentAmp<0.05?'No motion':domFreq<2?'No tremor':domFreq<=6?'Rest tremor':'Essential?',
+    currentAmp<0.05?'var(--green)':domFreq<2?'var(--green)':domFreq<=6?'var(--red)':'var(--orange)');
+  setCard('v-emg',  emgPct.toFixed(1)+'%',
+    emgPct<1?'⚠ Weak':emgPct<20?'Fair':'Good',
+    emgPct<1?'var(--red)':emgPct<20?'var(--orange)':'var(--green)', 's-emg');
+  setCard('v-gyro', gyroMag.toFixed(1),
+    gyroMag<5?'Low':gyroMag<30?'Moderate':'High',
+    gyroMag<5?'var(--green)':gyroMag<30?'var(--orange)':'var(--red)');
+  setCard('v-trend', trendTxt, null, trendColor, 's-trend');
+
+  // ── SESSION STATS ─────────────────────────────
+  document.getElementById('stat-samples').textContent = sessionData.length;
+  document.getElementById('stat-avg-amp').textContent = avg(sessionData.map(ampOf)).toFixed(3);
+  document.getElementById('stat-avg-emg').textContent = avg(sessionData.map(r=>r.emg_rms_pct||0)).toFixed(1)+'%';
+  document.getElementById('stat-peak-hz').textContent = currentAmp<0.05?'N/A':domFreq.toFixed(1)+' Hz';
+
+  // ── BADGES ────────────────────────────────────
+  const bM = document.getElementById('badge-motor');
+  const bT = document.getElementById('badge-type');
+  const motorMap = [
+    {lbl:'Normal',        bg:'#16a34a'},
+    {lbl:'Slight',        bg:'#ca8a04'},
+    {lbl:'Mild Tremor',   bg:'#ea580c'},
+    {lbl:'Abnormal',      bg:'#dc2626'},
+    {lbl:'Severe Tremor', bg:'#7f1d1d'}
+  ];
+  bM.textContent = motorMap[updrs].lbl;
+  bM.style.background = motorMap[updrs].bg;
+
+  let typeTxt='No Tremor', typeBg='#16a34a';
+  if      (currentAmp>=0.05&&domFreq>=3&&domFreq<=6)  { typeTxt='Rest Tremor';     typeBg='#dc2626'; }
+  else if (currentAmp>=0.05&&domFreq>6&&domFreq<=12)  { typeTxt='Essential Tremor'; typeBg='#ca8a04'; }
+  else if (currentAmp>=0.05)                           { typeTxt='Unclassified';    typeBg='#94a3b8'; }
+  bT.textContent=typeTxt; bT.style.background=typeBg;
+
+  // ── FLAGS ─────────────────────────────────────
+  const flags = [];
+  if (updrs>=3)                                   flags.push({c:'flag-crit',m:'⚠ High tremor severity — consider referral'});
+  if (domFreq>=4&&domFreq<=6&&currentAmp>0.15)   flags.push({c:'flag-warn',m:"⚠ Pattern consistent with Parkinson's rest tremor"});
+  if (domFreq>6&&domFreq<=12&&currentAmp>0.05)   flags.push({c:'flag-info',m:'ℹ Pattern consistent with essential tremor'});
+  if (emgPct<1.0)                                 flags.push({c:'flag-warn',m:'⚠ EMG signal weak — verify electrode contact'});
+  if (!flags.length)                              flags.push({c:'flag-ok',  m:'✓ No significant clinical flags detected'});
+  document.getElementById('flags-list').innerHTML = flags.map(f=>`<div class="flag-item ${f.c}">${f.m}</div>`).join('');
+
+  // ── CLINICAL PANEL ────────────────────────────
+  const ptName  = selectedPatient ? selectedPatient.name : 'No patient selected';
+  const typeStr = currentAmp<0.05?'None':domFreq<=6?'Rest Tremor':'Essential';
+  const now     = new Date().toLocaleString();
+  document.getElementById('clinical-panel').textContent =
+`Patient          : ${ptName}
+Time             : ${now}
+────────────────────────────────
+Tremor Analysis
+  Dominant freq  : ${currentAmp<0.05?'N/A':domFreq.toFixed(2)+' Hz'}
+  Classification : ${typeStr}
+  Peak amplitude : ${currentAmp.toFixed(3)} m/s²
+  Session avg    : ${avg(sessionData.map(ampOf)).toFixed(3)} m/s²
+
+Grip Assessment
+  Current RMS    : ${emgPct.toFixed(1)} %
+  Signal quality : ${emgPct<1?'Weak ⚠':emgPct<20?'Fair':'Good ✓'}
+
+UPDRS Estimate   : ${updrs}/4 — ${uLabel}
+Gyro Activity    : ${gyroMag.toFixed(1)} deg/s
+
+Clinical Flags
+${flags.map(f=>'  '+f.m).join('\n')}`;
+
+  // ── CHARTS ────────────────────────────────────
+  const nowTS = new Date().toLocaleTimeString();
+
+  // FFT
+  if (fft.length) {
+    chartFFT.data.labels = fft.map((_,i)=>(i*hzPerBin).toFixed(1));
+    chartFFT.data.datasets[0].data = fft;
+    chartFFT.update('none');
+    document.getElementById('ts-fft').textContent = 'Updated ' + nowTS;
+  }
+
+  // Amplitude — full session timeline
+  chartAmp.data.labels = sessionData.map(r=>((new Date(r.timestamp)-sessionStart)/1000).toFixed(0)+'s');
+  chartAmp.data.datasets[0].data = sessionData.map(ampOf);
+  chartAmp.update('none');
+  document.getElementById('ts-amp').textContent = `${sessionData.length} samples · Updated ${nowTS}`;
+
+  // EMG bar
+  chartEMG.data.labels = last20.map(r=>new Date(r.timestamp).toLocaleTimeString());
+  chartEMG.data.datasets[0].data = last20.map(r=>r.emg_rms_pct||0);
+  chartEMG.data.datasets[0].backgroundColor = last20.map(r=>(r.emg_rms_pct||0)>5?'rgba(11,102,119,.75)':'rgba(148,163,184,.5)');
+  chartEMG.update('none');
+  document.getElementById('ts-emg').textContent = 'Updated ' + nowTS;
+
+  // Axis decomposition — last 30
+  const last30 = sessionData.slice(-30);
+  chartAxis.data.labels = last30.map(r=>new Date(r.timestamp).toLocaleTimeString());
+  chartAxis.data.datasets[0].data = last30.map(r=>toAccMs2(r.acc_x)-gBase.x);
+  chartAxis.data.datasets[1].data = last30.map(r=>toAccMs2(r.acc_y)-gBase.y);
+  chartAxis.data.datasets[2].data = last30.map(r=>toAccMs2(r.acc_z)-gBase.z);
+  chartAxis.update('none');
+  document.getElementById('ts-axis').textContent = 'Updated ' + nowTS;
+
+  // ── READINGS TABLE ────────────────────────────
+  const tbody = document.getElementById('readings-tbody');
+  tbody.innerHTML = '';
+  [...sessionData].reverse().slice(0,100).forEach(r=>{
+    const ax=toAccMs2(r.acc_x)-gBase.x, ay=toAccMs2(r.acc_y)-gBase.y, az=toAccMs2(r.acc_z)-gBase.z;
+    const gxd=toGyroDps(r.gyro_x||0), gyd=toGyroDps(r.gyro_y||0), gzd=toGyroDps(r.gyro_z||0);
+    const gm=Math.sqrt(gxd*gxd+gyd*gyd+gzd*gzd);
+    tbody.innerHTML+=`<tr>
+      <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+      <td>${(r.emg_rms_pct||0).toFixed(1)}%</td>
+      <td>${ax.toFixed(3)}</td><td>${ay.toFixed(3)}</td><td>${az.toFixed(3)}</td>
+      <td>${gm.toFixed(2)}</td>
+      <td>${(r.roll||0).toFixed(1)}°</td><td>${(r.pitch||0).toFixed(1)}°</td>
+    </tr>`;
+  });
+}
+
+// ════════════════════════════════════════════════
+//  UI HELPERS
+// ════════════════════════════════════════════════
+function setCard(valId, value, sub, color, subId) {
+  const v = document.getElementById(valId);
+  v.textContent = value;
+  if (color) v.style.color = color;
+  if (subId && sub !== null) document.getElementById(subId).textContent = sub;
+}
+
+function exportChart(canvasId, name) {
+  const a = document.createElement('a');
+  a.href = document.getElementById(canvasId).toDataURL('image/png');
+  a.download = `neurosense_${name}_${Date.now()}.png`;
+  a.click();
+}
+
+// ════════════════════════════════════════════════
+//  REPORT
+// ════════════════════════════════════════════════
+function generateReport() {
+  const pn = selectedPatient ? selectedPatient.name : 'Unknown';
+  const mr = selectedPatient ? selectedPatient.patient_id : '—';
+  const ag = selectedPatient ? (selectedPatient.age || '—') : '—';
+  const dx = selectedPatient ? (selectedPatient.diagnosis || '—') : '—';
+  const w  = window.open();
+  w.document.write(`<!DOCTYPE html><html><head><title>NeuroSense Report</title>
+<style>body{font-family:Inter,sans-serif;padding:40px;color:#1e293b;line-height:1.7;max-width:900px;margin:0 auto;}
+h1{color:#0b6677;margin-bottom:4px;} h3{color:#334155;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-top:28px;}
+pre{background:#f8fafc;padding:1rem;border-radius:8px;font-size:0.82rem;border:1px solid #e2e8f0;}
+.charts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+.charts img{width:calc(50% - 4px);border:1px solid #e2e8f0;border-radius:8px;}
+.footer{color:#64748b;font-size:0.78rem;margin-top:40px;border-top:1px solid #e2e8f0;padding-top:12px;}
+</style></head><body>
+<h1>NeuroSense Clinical Report</h1>
+<p><strong>Patient:</strong> ${pn} &nbsp;|&nbsp; <strong>MRN:</strong> ${mr} &nbsp;|&nbsp; <strong>Age:</strong> ${ag} &nbsp;|&nbsp; <strong>Diagnosis:</strong> ${dx}</p>
+<p><strong>Generated:</strong> ${new Date().toLocaleString()} &nbsp;|&nbsp; <strong>Duration:</strong> ${SESSION_SECS}s &nbsp;|&nbsp; <strong>Samples:</strong> ${sessionData.length}</p>
+<h3>Clinical Summary</h3>
+<pre>${document.getElementById('clinical-panel').textContent}</pre>
+<h3>Charts</h3>
+<div class="charts">
+  <img src="${document.getElementById('chart-fft').toDataURL()}">
+  <img src="${document.getElementById('chart-amp').toDataURL()}">
+  <img src="${document.getElementById('chart-emg').toDataURL()}">
+  <img src="${document.getElementById('chart-axis').toDataURL()}">
+</div>
+<div class="footer">
+  <p style="margin-bottom:40px;">_________________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ___________</p>
+  <p>Physician Signature</p>
+  <p>Generated by NeuroSense v2.1 — For clinical reference only. Not a substitute for professional medical advice.</p>
+</div></body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(), 500);
+}
+
+// ════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════
+window.onload = () => {
+  initCharts();
+  loadPatients();
+  fetchData();
+  // light preview poll — shows live gyro/emg before session starts
+  previewId = setInterval(()=>{ if (!monitoring) fetchData(); }, 2000);
+};
 </script>
 {% endblock %}

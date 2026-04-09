@@ -96,27 +96,103 @@ def sensor_data_list(request):
     for r in readings:
         data = SensorReadingSerializer(r).data
         data["emg_raw"] = safe_int(data.get("emg_raw", 0))
+        output.append(data)
     return Response(output)
 
-# --- BOILERPLATE FOR URL ROUTING ---
-from django.shortcuts import render, redirect
+# --- HTML PAGE VIEWS ---
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from .models import Patient, TestSession
 
-def login_view(request): return render(request, "login.html")
-def logout_view(request): return redirect("/")
-def patient_list(request): return render(request, "patients.html")
-def patient_create(request): return render(request, "patient_form.html")
-def patient_detail(request, patient_id): return render(request, "patient_detail.html")
-def doctor_dashboard(request): return render(request, "doctor_dashboard.html")
-def test_session_summary(request, pk): return Response({})
-def tests_list(request): return render(request, "tests_list.html")
-def reports_list(request): return render(request, "reports_list.html")
-def settings_view(request): return render(request, "settings.html")
+def login_view(request):
+    if request.method == "POST":
+        from django.contrib.auth import authenticate, login
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        user = authenticate(request, username=username, password=password)
+        if user:
+            login(request, user)
+            return redirect("/doctor-dashboard/")
+        return render(request, "login.html", {"error": "Invalid credentials"})
+    return render(request, "login.html")
+
+def logout_view(request):
+    from django.contrib.auth import logout
+    logout(request)
+    return redirect("/")
+
+def patient_list(request):
+    patients = Patient.objects.filter(doctor=request.user).order_by("-created_at") if request.user.is_authenticated else Patient.objects.all().order_by("-created_at")
+    return render(request, "patient_list.html", {"patients": patients})
+
+def patient_create(request):
+    if request.method == "POST":
+        name       = request.POST.get("name", "").strip()
+        age        = request.POST.get("age", None)
+        gender     = request.POST.get("gender", "")
+        patient_id = request.POST.get("patient_id", "").strip()
+        diagnosis  = request.POST.get("diagnosis", "")
+        notes      = request.POST.get("notes", "")
+
+        if not name or not patient_id:
+            return render(request, "patient_form.html", {"error": "Full Name and Patient ID are required."})
+
+        if Patient.objects.filter(patient_id=patient_id).exists():
+            return render(request, "patient_form.html", {"error": f"Patient ID '{patient_id}' already exists. Use a unique ID."})
+
+        doctor = request.user if request.user.is_authenticated else None
+        # If not logged in (dev mode), use first superuser
+        if doctor is None:
+            from django.contrib.auth.models import User
+            doctor = User.objects.filter(is_superuser=True).first()
+
+        Patient.objects.create(
+            doctor=doctor,
+            name=name,
+            age=int(age) if age and age.isdigit() else None,
+            gender=gender,
+            patient_id=patient_id,
+            diagnosis=diagnosis,
+            notes=notes,
+        )
+        return redirect("/patients/")
+
+    return render(request, "patient_form.html")
+
+def patient_detail(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    sessions = TestSession.objects.filter(patient=patient).order_by("-started_at")
+    return render(request, "patient_detail.html", {"patient": patient, "sessions": sessions})
+
+def doctor_dashboard(request):
+    return render(request, "doctor_dashboard.html")
+
+def test_session_summary(request, pk):
+    session = get_object_or_404(TestSession, pk=pk)
+    return render(request, "test_session_summary.html", {"session": session})
+
+def tests_list(request):
+    sessions = TestSession.objects.all().order_by("-started_at")
+    return render(request, "tests_list.html", {"sessions": sessions})
+
+def reports_list(request):
+    patients = Patient.objects.all().order_by("-created_at")
+    return render(request, "reports_list.html", {"patients": patients})
+
+def settings_view(request):
+    return render(request, "settings.html")
 
 @api_view(["GET"])
-def patient_list_api(request): return Response([])
+def patient_list_api(request):
+    patients = Patient.objects.all().order_by("-created_at")
+    from .serializers import PatientSerializer
+    return Response(PatientSerializer(patients, many=True).data)
 
 @api_view(["GET"])
-def patient_detail_api(request, patient_id): return Response({})
+def patient_detail_api(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    from .serializers import PatientSerializer
+    return Response(PatientSerializer(patient).data)
 
 @api_view(["POST"])
 def save_test_session(request): return Response({})
