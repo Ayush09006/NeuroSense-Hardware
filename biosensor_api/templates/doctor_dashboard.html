@@ -250,17 +250,27 @@ const ampOf     = r => {
 };
 
 function computeDFT(samples) {
-  if (!samples || samples.length < 4) return []; // guard
-  const N = samples.length, out = [];
+  if (!samples || samples.length < 20) return []; // Fix: Wait for stable window
+  const N = samples.length;
+  
+  // Detrend: Remove the mean of the current window to kill DC bias
+  const mean = samples.reduce((s,v)=>s+v,0) / N;
+  const detrended = samples.map(v => v - mean);
+  
+  const out = [];
   for (let k = 0; k < N/2; k++) {
     let re = 0, im = 0;
     for (let n = 0; n < N; n++) {
       const a = (2*Math.PI*k*n)/N;
-      re += samples[n]*Math.cos(a);
-      im -= samples[n]*Math.sin(a);
+      re += detrended[n]*Math.cos(a);
+      im -= detrended[n]*Math.sin(a);
     }
-    // Normalize by N/2 to return results in actual physical units (m/s²)
-    out.push((Math.sqrt(re*re+im*im) * 2) / N);
+    // Normalize and zero out the DC bin (first bin) to prevent scaling issues
+    if (k === 0) {
+      out.push(0);
+    } else {
+      out.push((Math.sqrt(re*re+im*im) * 2) / N);
+    }
   }
   return out;
 }
