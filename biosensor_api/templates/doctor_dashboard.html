@@ -259,7 +259,8 @@ function computeDFT(samples) {
       re += samples[n]*Math.cos(a);
       im -= samples[n]*Math.sin(a);
     }
-    out.push(Math.sqrt(re*re+im*im));
+    // Normalize by N/2 to return results in actual physical units (m/s²)
+    out.push((Math.sqrt(re*re+im*im) * 2) / N);
   }
   return out;
 }
