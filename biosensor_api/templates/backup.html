@@ -1,0 +1,1593 @@
+
+Doctor Dashboard Template for Parkinson's Biosensor Monitoring System
+Displays real-time data, controls for starting/stopping tests,
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Doctor Dashboard - Parkinson Biosensor</title>
+
+    <!-- Bootstrap -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    >
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+        .card {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .channel-badge {
+            font-size: 0.85rem;
+            margin-right: 4px;
+        }
+    </style>
+</head>
+<body data-patient-id="{{ patient_id|default:'' }}">
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1">
+            Parkinson's Biosensor – Doctor Dashboard
+        </span>
+        <span class="text-light">
+            <a href="/patients/" class="btn btn-sm btn-outline-light me-2">Patients</a>
+            <a href="/logout/" class="btn btn-sm btn-outline-light">Logout</a>
+
+        </span>
+    </div>
+</nav>
+
+<div class="container-fluid">
+
+    <!-- Monitoring controls row -->
+    <div class="row mb-3">
+        <div class="col-md-8 mb-2">
+            <div class="card">
+                <div class="card-body d-flex flex-wrap align-items-center justify-content-between">
+                    <div>
+                        <h6 class="card-title mb-1">Monitoring Control</h6>
+                        <small id="monitor-status" class="text-muted">Monitoring: OFF</small>
+                        <small id="timer" class="text-info ms-2">Time left: --</small>
+                    </div>
+                    <div class="mt-2 mt-md-0">
+                        <button id="btn-start" class="btn btn-success me-2">
+                            ▶ Start 90-sec Test
+                        </button>
+                        <button id="btn-stop" class="btn btn-outline-danger" disabled>
+                            ⏹ Stop Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Last update card -->
+        <div class="col-md-4 mb-2">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Last Update</h6>
+                    <p id="last-timestamp" class="card-text fw-bold">--</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top row: summary cards -->
+    <div class="row mb-3">
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">EMG Amplitude (EMG)</h6>
+                    <p id="emg_voltage-value" class="card-text fs-3 fw-bold text-primary">--</p>
+                    <small class="text-muted">0–100 % (scaled)</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Acceleration |g| approx</h6>
+                    <p id="acc-magnitude" class="card-text fs-3 fw-bold text-success">--</p>
+                    <small class="text-muted">Derived from x, y, z (m/s²)</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Gyro Activity</h6>
+                    <p id="gyro-activity" class="card-text fs-3 fw-bold text-danger">--</p>
+                    <small class="text-muted">Higher = more tremor (deg/s)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis row: summary of data -->
+    <div class="row mb-3">
+        <div class="col-md-6 mb-2">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        Analysis of Current Test Window
+                        <small class="text-muted">(entire 90 sec)</small>
+                    </h6>
+                    <p class="mb-1">
+                        <strong>Total readings in test:</strong>
+                        <span id="total-readings">--</span>
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average EMG Amplitude (EMG):</strong>
+                        <span id="avg-emg_voltage">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average Acceleration Magnitude:</strong>
+                        <span id="avg-acc-mag">--</span> m/s²
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average Gyro Activity:</strong>
+                        <span id="avg-gyro-activity">--</span> deg/s
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average EMG per Finger (Full Test):</strong><br>
+                        Ch 1: <span id="avg-emg_raw-thumb">--</span> % |
+                        Ch 2: <span id="avg-emg_raw-index">--</span> % |
+                        Ch 3: <span id="avg-emg_raw-middle">--</span> % |
+                        Ch 4: <span id="avg-emg_raw-ring">--</span> % |
+                        Ch 5: <span id="avg-emg_raw-little">--</span> %
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-2">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Parkinson Tremor Index (Full 90-sec Test)</h6>
+                    <p id="tremor-score" class="fs-3 fw-bold text-danger">--</p>
+                    <small class="text-muted d-block mb-2">
+                        0–100 scale based on average gyro activity over full 90 sec (demo heuristic).
+                    </small>
+                    <h6 class="card-title mt-3">Export Graphs (Last 20 sec View)</h6>
+                    <button id="btn-export-emg_raw" class="btn btn-outline-primary btn-sm me-2">
+                        Download EMG Chart
+                    </button>
+                    <button id="btn-export-acc" class="btn btn-outline-secondary btn-sm">
+                        Download Tremor Chart
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Second row: EMG values + charts -->
+    <div class="row mb-4">
+        <!-- EMG per finger -->
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Finger Bending (Current Reading)</h6>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 1</span>
+                        <span id="emg_raw-thumb">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 2</span>
+                        <span id="emg_raw-index">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 3</span>
+                        <span id="emg_raw-middle">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 4</span>
+                        <span id="emg_raw-ring">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 5</span>
+                        <span id="emg_raw-little">--</span> %
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- EMG chart -->
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">EMG Sensors – Last ~20 sec of Test</h6>
+                    <canvas id="emg_rawChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tremor chart -->
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Tremor / Motion (Accel Z) – Last ~20 sec</h6>
+                    <canvas id="accChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table of test readings -->
+    <div class="row">
+        <div class="col-12 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Readings in Current Test (Full 90 sec)</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>EMG (T, I, M, R, L) %</th>
+                                    <th>EMG %</th>
+                                    <th>Acc (x,y,z) m/s²</th>
+                                    <th>Gyro (x,y,z) deg/s</th>
+                                </tr>
+                            </thead>
+                            <tbody id="readings-table-body"></tbody>
+                        </table>
+                    </div>
+                    <small class="text-muted">
+                        Table & analysis use ALL readings from this 90-sec test.
+                        Charts only show the latest ~20 seconds for readability.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // API + constants
+    const API_URL = "/api/sensor-data/list/?limit=200";
+    const TEST_DURATION = 90; // seconds
+    const GRAPH_WINDOW_POINTS = 20; // show last ~20 sec (assuming ~1 Hz)
+
+    // MPU6050 conversion factors
+    const ACC_LSB_PER_G = 16384.0;  // assuming ±2g
+    const G_TO_MS2 = 9.81;
+    const GYRO_LSB_PER_DPS = 131.0; // assuming ±250 deg/s
+
+    let emg_rawChart = null;
+    let accChart = null;
+
+    let monitoring = false;
+    let monitorIntervalId = null;
+    let countdown = 0;
+    let countdownTimerId = null;
+
+    let sessionData = [];          // all readings in current 90-sec test
+    let sessionIdSet = new Set();  // to avoid duplicates by reading.id
+    let testStartTime = null;
+
+    // Tremor score: you can tune this mapping later
+    function computeTremorScore(avgGyroMagDps) {
+        // Map 0–10 deg/s → 0–100 score (demo)
+        const clamped = Math.max(0, Math.min(avgGyroMagDps, 10));
+        return (clamped / 10) * 100;
+    }
+
+    function initCharts() {
+        const emg_rawCtx = document.getElementById("emg_rawChart").getContext("2d");
+        const accCtx = document.getElementById("accChart").getContext("2d");
+
+        emg_rawChart = new Chart(emg_rawCtx, {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [
+                    { label: "Thumb",  data: [], borderWidth: 1 },
+                    { label: "Index",  data: [], borderWidth: 1 },
+                    { label: "Middle", data: [], borderWidth: 1 },
+                    { label: "Ring",   data: [], borderWidth: 1 },
+                    { label: "Little", data: [], borderWidth: 1 },
+                ],
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        min: 0,
+                        max: 100,
+                        title: { display: true, text: "EMG (%)" }
+                    }
+                }
+            }
+        });
+
+        accChart = new Chart(accCtx, {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [
+                    { label: "Acc Z (m/s²)", data: [], borderWidth: 1 },
+                ],
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        title: { display: true, text: "Accel Z (m/s²)" }
+                    }
+                }
+            }
+        });
+    }
+
+    function toEMGPercent(raw) {
+        if (raw === null || raw === undefined) return null;
+        return Math.max(0, Math.min(100, (raw / 4095) * 100));
+    }
+
+    function toEMGPercent(raw) {
+        if (raw === null || raw === undefined) return null;
+        return Math.max(0, Math.min(100, (raw / 4095) * 100));
+    }
+
+    function toAccMs2(raw) {
+        return (raw / ACC_LSB_PER_G) * G_TO_MS2;
+    }
+
+    function toGyroDps(raw) {
+        return raw / GYRO_LSB_PER_DPS;
+    }
+
+    function updateDashboard(apiData) {
+        if (!Array.isArray(apiData) || apiData.length === 0) return;
+
+        // Build / update sessionData = all readings from this 90-sec test
+        let fullWindowData;
+        if (testStartTime) {
+            apiData.forEach(r => {
+                if (!r.id) return;
+                const t = new Date(r.timestamp);
+                if (t >= testStartTime) {
+                    if (!sessionIdSet.has(r.id)) {
+                        sessionIdSet.add(r.id);
+                        sessionData.push(r);
+                    }
+                }
+            });
+            sessionData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            fullWindowData = sessionData;
+        } else {
+            fullWindowData = apiData.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        }
+
+        if (fullWindowData.length === 0) return;
+
+        // Latest reading (last of full window)
+        const latest = fullWindowData[fullWindowData.length - 1];
+
+        document.getElementById("last-timestamp").innerText =
+            new Date(latest.timestamp).toLocaleString();
+
+        // -------- Quick cards from latest --------
+        // EMG
+        const emg_voltagePerc = toEMGPercent(latest.emg_voltage ?? 0);
+        document.getElementById("emg_voltage-value").innerText =
+            emg_voltagePerc !== null ? emg_voltagePerc.toFixed(1) : "--";
+
+        // Accel & gyro (support both flat & nested, just in case)
+        const rawAx = latest.acc_x ?? latest.acc?.x ?? 0;
+        const rawAy = latest.acc_y ?? latest.acc?.y ?? 0;
+        const rawAz = latest.acc_z ?? latest.acc?.z ?? 0;
+
+        const axMs2 = toAccMs2(rawAx);
+        const ayMs2 = toAccMs2(rawAy);
+        const azMs2 = toAccMs2(rawAz);
+
+        const accMag = Math.sqrt(axMs2*axMs2 + ayMs2*ayMs2 + azMs2*azMs2).toFixed(2);
+        document.getElementById("acc-magnitude").innerText = accMag;
+
+        const rawGx = latest.gyro_x ?? latest.gyro?.x ?? 0;
+        const rawGy = latest.gyro_y ?? latest.gyro?.y ?? 0;
+        const rawGz = latest.gyro_z ?? latest.gyro?.z ?? 0;
+
+        const gxDps = toGyroDps(rawGx);
+        const gyDps = toGyroDps(rawGy);
+        const gzDps = toGyroDps(rawGz);
+
+        const gyroMag = Math.sqrt(gxDps*gxDps + gyDps*gyDps + gzDps*gzDps).toFixed(3);
+        document.getElementById("gyro-activity").innerText = gyroMag;
+
+        // EMG latest (scale to %)
+        const emg_rawLatestRaw = latest.emg_raw || [null,null,null,null,null];
+        const emg_rawLatestPerc = emg_rawLatestRaw.map(toEMGPercent);
+
+        document.getElementById("emg_raw-thumb").innerText  =
+            emg_rawLatestPerc[0] !== null ? emg_rawLatestPerc[0].toFixed(1) : "--";
+        document.getElementById("emg_raw-index").innerText  =
+            emg_rawLatestPerc[1] !== null ? emg_rawLatestPerc[1].toFixed(1) : "--";
+        document.getElementById("emg_raw-middle").innerText =
+            emg_rawLatestPerc[2] !== null ? emg_rawLatestPerc[2].toFixed(1) : "--";
+        document.getElementById("emg_raw-ring").innerText   =
+            emg_rawLatestPerc[3] !== null ? emg_rawLatestPerc[3].toFixed(1) : "--";
+        document.getElementById("emg_raw-little").innerText =
+            emg_rawLatestPerc[4] !== null ? emg_rawLatestPerc[4].toFixed(1) : "--";
+
+        // -------- Table – FULL test window (sorted latest first) --------
+        const tbody = document.getElementById("readings-table-body");
+        tbody.innerHTML = "";
+        fullWindowData.slice().reverse().forEach(row => {
+            const tr = document.createElement("tr");
+
+            const t = document.createElement("td");
+            t.innerText = new Date(row.timestamp).toLocaleTimeString();
+            tr.appendChild(t);
+
+            const emg_rawRaw = row.emg_raw || [];
+            const emg_rawPercRow = emg_rawRaw.map(toEMGPercent).map(v =>
+                v !== null ? v.toFixed(1) : "--"
+            );
+            const f = document.createElement("td");
+            f.innerText = emg_rawPercRow.join(", ");
+            tr.appendChild(f);
+
+            const emg_voltageCell = document.createElement("td");
+            const rowFsrPerc = toEMGPercent(row.emg_voltage ?? 0);
+            emg_voltageCell.innerText = rowFsrPerc !== null ? rowFsrPerc.toFixed(1) : "--";
+            tr.appendChild(emg_voltageCell);
+
+            const rax = row.acc_x ?? row.acc?.x ?? 0;
+            const ray = row.acc_y ?? row.acc?.y ?? 0;
+            const raz = row.acc_z ?? row.acc?.z ?? 0;
+
+            const raxMs2 = toAccMs2(rax);
+            const rayMs2 = toAccMs2(ray);
+            const razMs2 = toAccMs2(raz);
+
+            const accTd = document.createElement("td");
+            accTd.innerText = `${raxMs2.toFixed(2)}, ${rayMs2.toFixed(2)}, ${razMs2.toFixed(2)}`;
+            tr.appendChild(accTd);
+
+            const rgx = row.gyro_x ?? row.gyro?.x ?? 0;
+            const rgy = row.gyro_y ?? row.gyro?.y ?? 0;
+            const rgz = row.gyro_z ?? row.gyro?.z ?? 0;
+
+            const rgxDps = toGyroDps(rgx);
+            const rgyDps = toGyroDps(rgy);
+            const rgzDps = toGyroDps(rgz);
+
+            const gyroTd = document.createElement("td");
+            gyroTd.innerText = `${rgxDps.toFixed(3)}, ${rgyDps.toFixed(3)}, ${rgzDps.toFixed(3)}`;
+            tr.appendChild(gyroTd);
+
+            tbody.appendChild(tr);
+        });
+
+        // ---------- GRAPHS: ONLY LAST ~20 POINTS ----------
+        const graphData = fullWindowData.slice(-GRAPH_WINDOW_POINTS);
+
+        const labels = graphData.map(d => new Date(d.timestamp).toLocaleTimeString());
+        emg_rawChart.data.labels = labels;
+        accChart.data.labels = labels;
+
+        const emg_rawThumbRaw  = graphData.map(d => (d.emg_raw || [null])[0]);
+        const emg_rawIndexRaw  = graphData.map(d => (d.emg_raw || [null,null])[1]);
+        const emg_rawMiddleRaw = graphData.map(d => (d.emg_raw || [null,null,null])[2]);
+        const emg_rawRingRaw   = graphData.map(d => (d.emg_raw || [null,null,null,null])[3]);
+        const emg_rawLittleRaw = graphData.map(d => (d.emg_raw || [null,null,null,null,null])[4]);
+
+        emg_rawChart.data.datasets[0].data = emg_rawThumbRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[1].data = emg_rawIndexRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[2].data = emg_rawMiddleRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[3].data = emg_rawRingRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[4].data = emg_rawLittleRaw.map(toEMGPercent);
+
+        const accZMs2 = graphData.map(d => {
+            const rawZ = d.acc_z ?? d.acc?.z ?? 0;
+            return toAccMs2(rawZ);
+        });
+        accChart.data.datasets[0].data = accZMs2;
+
+        emg_rawChart.update();
+        accChart.update();
+
+        // ---------- ANALYSIS: FULL 90-SEC TEST DATA ----------
+        const total = fullWindowData.length;
+        document.getElementById("total-readings").innerText = total;
+
+        // Average EMG (scaled)
+        const avgFsrRaw = fullWindowData.reduce((sum, r) => sum + (r.emg_voltage || 0), 0) / total;
+        const avgFsrPerc = toEMGPercent(avgFsrRaw);
+        document.getElementById("avg-emg_voltage").innerText =
+            avgFsrPerc !== null ? avgFsrPerc.toFixed(1) : "--";
+
+        let accMagSum = 0;
+        let gyroMagSum = 0;
+
+        fullWindowData.forEach(r => {
+            const xRaw = r.acc_x ?? r.acc?.x ?? 0;
+            const yRaw = r.acc_y ?? r.acc?.y ?? 0;
+            const zRaw = r.acc_z ?? r.acc?.z ?? 0;
+
+            const xMs2 = toAccMs2(xRaw);
+            const yMs2 = toAccMs2(yRaw);
+            const zMs2 = toAccMs2(zRaw);
+            accMagSum += Math.sqrt(xMs2*xMs2 + yMs2*yMs2 + zMs2*zMs2);
+
+            const gxRaw2 = r.gyro_x ?? r.gyro?.x ?? 0;
+            const gyRaw2 = r.gyro_y ?? r.gyro?.y ?? 0;
+            const gzRaw2 = r.gyro_z ?? r.gyro?.z ?? 0;
+
+            const gxDps2 = toGyroDps(gxRaw2);
+            const gyDps2 = toGyroDps(gyRaw2);
+            const gzDps2 = toGyroDps(gzRaw2);
+            gyroMagSum += Math.sqrt(gxDps2*gxDps2 + gyDps2*gyDps2 + gzDps2*gzDps2);
+        });
+
+        const avgAccMag = accMagSum / total;
+        const avgGyroMag = gyroMagSum / total;
+        document.getElementById("avg-acc-mag").innerText = avgAccMag.toFixed(2);
+        document.getElementById("avg-gyro-activity").innerText = avgGyroMag.toFixed(3);
+
+        function avg(arr) {
+            const valid = arr.filter(v => v !== null && v !== undefined);
+            if (!valid.length) return null;
+            return valid.reduce((s,v) => s+v, 0) / valid.length;
+        }
+
+        // Average emg_raw per finger using FULL DATA, scaled to %
+        const fullEMGThumbRaw  = fullWindowData.map(d => (d.emg_raw || [null])[0]);
+        const fullEMGIndexRaw  = fullWindowData.map(d => (d.emg_raw || [null,null])[1]);
+        const fullEMGMiddleRaw = fullWindowData.map(d => (d.emg_raw || [null,null,null])[2]);
+        const fullEMGRingRaw   = fullWindowData.map(d => (d.emg_raw || [null,null,null,null])[3]);
+        const fullEMGLittleRaw = fullWindowData.map(d => (d.emg_raw || [null,null,null,null,null])[4]);
+
+        const fullEMGThumbPerc  = fullEMGThumbRaw.map(toEMGPercent);
+        const fullEMGIndexPerc  = fullEMGIndexRaw.map(toEMGPercent);
+        const fullEMGMiddlePerc = fullEMGMiddleRaw.map(toEMGPercent);
+        const fullEMGRingPerc   = fullEMGRingRaw.map(toEMGPercent);
+        const fullEMGLittlePerc = fullEMGLittleRaw.map(toEMGPercent);
+
+        const avgEMGThumb  = avg(fullEMGThumbPerc);
+        const avgEMGIndex  = avg(fullEMGIndexPerc);
+        const avgEMGMiddle = avg(fullEMGMiddlePerc);
+        const avgEMGRing   = avg(fullEMGRingPerc);
+        const avgEMGLittle = avg(fullEMGLittlePerc);
+
+        document.getElementById("avg-emg_raw-thumb").innerText  =
+            avgEMGThumb  !== null ? avgEMGThumb.toFixed(1)  : "--";
+        document.getElementById("avg-emg_raw-index").innerText  =
+            avgEMGIndex  !== null ? avgEMGIndex.toFixed(1)  : "--";
+        document.getElementById("avg-emg_raw-middle").innerText =
+            avgEMGMiddle !== null ? avgEMGMiddle.toFixed(1) : "--";
+        document.getElementById("avg-emg_raw-ring").innerText   =
+            avgEMGRing   !== null ? avgEMGRing.toFixed(1)   : "--";
+        document.getElementById("avg-emg_raw-little").innerText =
+            avgEMGLittle !== null ? avgEMGLittle.toFixed(1) : "--";
+
+        // Tremor score from average gyro magnitude (deg/s)
+        const tremorScore = computeTremorScore(avgGyroMag);
+        document.getElementById("tremor-score").innerText = tremorScore.toFixed(1);
+    }
+
+    async function fetchDataAndUpdate() {
+        try {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            updateDashboard(data);
+        } catch (err) {
+            console.error("Error fetching data:", err);
+        }
+    }
+
+    function startMonitoring() {
+        if (monitoring) return;
+        monitoring = true;
+
+        // Reset session data for a fresh 90-sec test
+        sessionData = [];
+        sessionIdSet = new Set();
+
+        document.getElementById("monitor-status").innerText = "Monitoring: ON";
+        document.getElementById("btn-start").disabled = true;
+        document.getElementById("btn-stop").disabled = false;
+
+        testStartTime = new Date();
+
+        fetchDataAndUpdate();
+        monitorIntervalId = setInterval(fetchDataAndUpdate, 1000);
+
+        countdown = TEST_DURATION;
+        document.getElementById("timer").innerText = "Time left: " + countdown + "s";
+
+        countdownTimerId = setInterval(() => {
+            countdown--;
+            document.getElementById("timer").innerText = "Time left: " + countdown + "s";
+            if (countdown <= 0) {
+                stopMonitoring(true);
+            }
+        }, 1000);
+    }
+
+    function stopMonitoring(autoSave = false) {
+        if (!monitoring) return;
+        monitoring = false;
+
+        document.getElementById("monitor-status").innerText = "Monitoring: OFF";
+        document.getElementById("btn-start").disabled = false;
+        document.getElementById("btn-stop").disabled = true;
+
+        if (monitorIntervalId !== null) {
+            clearInterval(monitorIntervalId);
+            monitorIntervalId = null;
+        }
+
+        if (countdownTimerId !== null) {
+            clearInterval(countdownTimerId);
+            countdownTimerId = null;
+        }
+
+        document.getElementById("timer").innerText = "Time left: --";
+
+        const testEndTime = new Date();
+
+        if (autoSave && sessionData.length > 0) {
+            saveTestResultToServer(testStartTime, testEndTime, sessionData);
+        }
+    }
+
+    async function saveTestResultToServer(startTime, endTime, dataWindow) {
+        const patientId = document.body.dataset.patientId;
+        if (!patientId) {
+            console.warn("No patient_id – not saving test");
+            return;
+        }
+        if (!Array.isArray(dataWindow) || dataWindow.length === 0) return;
+
+        const total = dataWindow.length;
+
+        const avgFsrRaw = dataWindow.reduce((sum, r) => sum + (r.emg_voltage || 0), 0) / total;
+        const avgFsrPerc = toEMGPercent(avgFsrRaw);
+
+        let accMagSum = 0;
+        let gyroMagSum = 0;
+
+        const emg_rawThumbPerc  = [];
+        const emg_rawIndexPerc  = [];
+        const emg_rawMiddlePerc = [];
+        const emg_rawRingPerc   = [];
+        const emg_rawLittlePerc = [];
+
+        dataWindow.forEach(r => {
+            const xRaw = r.acc_x ?? r.acc?.x ?? 0;
+            const yRaw = r.acc_y ?? r.acc?.y ?? 0;
+            const zRaw = r.acc_z ?? r.acc?.z ?? 0;
+
+            const xMs2 = toAccMs2(xRaw);
+            const yMs2 = toAccMs2(yRaw);
+            const zMs2 = toAccMs2(zRaw);
+            accMagSum += Math.sqrt(xMs2*xMs2 + yMs2*yMs2 + zMs2*zMs2);
+
+            const gxRaw2 = r.gyro_x ?? r.gyro?.x ?? 0;
+            const gyRaw2 = r.gyro_y ?? r.gyro?.y ?? 0;
+            const gzRaw2 = r.gyro_z ?? r.gyro?.z ?? 0;
+
+            const gxDps2 = toGyroDps(gxRaw2);
+            const gyDps2 = toGyroDps(gyRaw2);
+            const gzDps2 = toGyroDps(gzRaw2);
+            gyroMagSum += Math.sqrt(gxDps2*gxDps2 + gyDps2*gyDps2 + gzDps2*gzDps2);
+
+            const f = r.emg_raw || [];
+            if (f.length >= 1) emg_rawThumbPerc.push(toEMGPercent(f[0]));
+            if (f.length >= 2) emg_rawIndexPerc.push(toEMGPercent(f[1]));
+            if (f.length >= 3) emg_rawMiddlePerc.push(toEMGPercent(f[2]));
+            if (f.length >= 4) emg_rawRingPerc.push(toEMGPercent(f[3]));
+            if (f.length >= 5) emg_rawLittlePerc.push(toEMGPercent(f[4]));
+        });
+
+        const avgAccMag = accMagSum / total;
+        const avgGyroMag = gyroMagSum / total;
+        const tremorScore = computeTremorScore(avgGyroMag);
+
+        function avg(arr) {
+            const valid = arr.filter(v => v !== null && v !== undefined);
+            if (!valid.length) return null;
+            return valid.reduce((s,v) => s+v, 0) / valid.length;
+        }
+
+        const payload = {
+            patient_id: parseInt(patientId),
+            started_at: startTime.toISOString(),
+            ended_at: endTime.toISOString(),
+            num_readings: total,
+            avg_emg_voltage: avgFsrPerc !== null ? avgFsrPerc : 0,
+            avg_acc_mag: avgAccMag,
+            avg_gyro_mag: avgGyroMag,
+            avg_emg_raw: {
+                thumb:  avg(emg_rawThumbPerc),
+                index:  avg(emg_rawIndexPerc),
+                middle: avg(emg_rawMiddlePerc),
+                ring:   avg(emg_rawRingPerc),
+                little: avg(emg_rawLittlePerc),
+            },
+            tremor_score: tremorScore,
+        };
+
+        try {
+            const response = await fetch("/api/test-session/save/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            console.log("Test session saved:", data);
+
+            if (response.ok && data.id) {
+                const summaryUrl = `/api/test-session/${data.id}/summary/`;
+                window.open(summaryUrl, "_blank");
+            } else {
+                console.error("Save test error:", response.status, data);
+                alert("Test save failed: " + (data.error || ("HTTP " + response.status)));
+            }
+        } catch (err) {
+            console.error("Error saving test session:", err);
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        initCharts();
+
+        document.getElementById("btn-start").addEventListener("click", startMonitoring);
+        document.getElementById("btn-stop").addEventListener("click", () => stopMonitoring(false));
+
+        document.getElementById("btn-export-emg_raw").addEventListener("click", () => {
+            if (!emg_rawChart) return;
+            const link = document.createElement("a");
+            link.href = emg_rawChart.toBase64Image();
+            link.download = "emg_raw_chart_last20sec.png";
+            link.click();
+        });
+
+        document.getElementById("btn-export-acc").addEventListener("click", () => {
+            if (!accChart) return;
+            const link = document.createElement("a");
+            link.href = accChart.toBase64Image();
+            link.download = "tremor_chart_last20sec.png";
+            link.click();
+        });
+    });
+</script>
+
+</body>
+</html>   
+
+
+
+
+
+# 2 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Doctor Dashboard - Parkinson Biosensor</title>
+
+    <!-- Bootstrap -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    >
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+        .card {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .channel-badge {
+            font-size: 0.85rem;
+            margin-right: 4px;
+        }
+    </style>
+</head>
+<body data-patient-id="{{ patient_id|default:'' }}">
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1">
+            Parkinson's Biosensor – Doctor Dashboard
+        </span>
+        <span class="text-light">
+            <a href="/patients/" class="btn btn-sm btn-outline-light me-2">Patients</a>
+            <a href="/logout/" class="btn btn-sm btn-outline-light">Logout</a>
+        </span>
+    </div>
+</nav>
+
+<div class="container-fluid">
+
+    <!-- Monitoring controls row -->
+    <div class="row mb-3">
+        <div class="col-md-8 mb-2">
+            <div class="card">
+                <div class="card-body d-flex flex-wrap align-items-center justify-content-between">
+                    <div>
+                        <h6 class="card-title mb-1">Monitoring Control</h6>
+                        <small id="monitor-status" class="text-muted">Monitoring: OFF</small>
+                        <small id="timer" class="text-info ms-2">Time left: --</small>
+                    </div>
+                    <div class="mt-2 mt-md-0">
+                        <button id="btn-start" class="btn btn-success me-2">
+                            ▶ Start 90-sec Test
+                        </button>
+                        <button id="btn-stop" class="btn btn-outline-danger" disabled>
+                            ⏹ Stop Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Last update card -->
+        <div class="col-md-4 mb-2">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Last Update</h6>
+                    <p id="last-timestamp" class="card-text fw-bold">--</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top row: summary cards -->
+    <div class="row mb-3">
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">EMG Amplitude (EMG)</h6>
+                    <p id="emg_voltage-value" class="card-text fs-3 fw-bold text-primary">--</p>
+                    <small class="text-muted">0–100 % (from raw EMG ADC)</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Acceleration |a|</h6>
+                    <p id="acc-magnitude" class="card-text fs-3 fw-bold text-success">--</p>
+                    <small class="text-muted">From raw x, y, z → m/s²</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Gyro Activity</h6>
+                    <p id="gyro-activity" class="card-text fs-3 fw-bold text-danger">--</p>
+                    <small class="text-muted">From raw gyro → deg/s (higher = more tremor)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis row: summary of data -->
+    <div class="row mb-3">
+        <div class="col-md-6 mb-2">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        Analysis of Current Test Window
+                        <small class="text-muted">(entire 90 sec)</small>
+                    </h6>
+                    <p class="mb-1">
+                        <strong>Total readings in test:</strong>
+                        <span id="total-readings">--</span>
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average EMG Amplitude (EMG):</strong>
+                        <span id="avg-emg_voltage">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average Acceleration Magnitude:</strong>
+                        <span id="avg-acc-mag">--</span> m/s²
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average Gyro Activity:</strong>
+                        <span id="avg-gyro-activity">--</span> deg/s
+                    </p>
+                    <p class="mb-1">
+                        <strong>Average EMG per Finger (Full Test):</strong><br>
+                        Ch 1: <span id="avg-emg_raw-thumb">--</span> % |
+                        Ch 2: <span id="avg-emg_raw-index">--</span> % |
+                        Ch 3: <span id="avg-emg_raw-middle">--</span> % |
+                        Ch 4: <span id="avg-emg_raw-ring">--</span> % |
+                        Ch 5: <span id="avg-emg_raw-little">--</span> %
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-2">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Parkinson Tremor Index (Full 90-sec Test)</h6>
+                    <p id="tremor-score" class="fs-3 fw-bold text-danger">--</p>
+                    <small class="text-muted d-block mb-2">
+                        0–100 scale based on average gyro activity over full 90 sec (heuristic – can be tuned).
+                    </small>
+                    <h6 class="card-title mt-3">Export Graphs (Last 20 sec View)</h6>
+                    <button id="btn-export-emg_raw" class="btn btn-outline-primary btn-sm me-2">
+                        Download EMG Chart
+                    </button>
+                    <button id="btn-export-acc" class="btn btn-outline-secondary btn-sm">
+                        Download Tremor Chart
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Second row: EMG values + charts -->
+    <div class="row mb-4">
+        <!-- EMG per finger -->
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Finger Bending (Current Reading)</h6>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 1</span>
+                        <span id="emg_raw-thumb">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 2</span>
+                        <span id="emg_raw-index">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 3</span>
+                        <span id="emg_raw-middle">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 4</span>
+                        <span id="emg_raw-ring">--</span> %
+                    </p>
+                    <p class="mb-1">
+                        <span class="badge bg-secondary channel-badge">Channel 5</span>
+                        <span id="emg_raw-little">--</span> %
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- EMG chart -->
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">EMG Sensors – Last ~20 sec of Test</h6>
+                    <canvas id="emg_rawChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tremor chart -->
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Tremor / Motion (Accel Z) – Last ~20 sec</h6>
+                    <canvas id="accChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table of test readings -->
+    <div class="row">
+        <div class="col-12 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Readings in Current Test (Full 90 sec)</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>EMG (T, I, M, R, L) %</th>
+                                    <th>EMG %</th>
+                                    <th>Acc (x,y,z) m/s²</th>
+                                    <th>Gyro (x,y,z) deg/s</th>
+                                </tr>
+                            </thead>
+                            <tbody id="readings-table-body"></tbody>
+                        </table>
+                    </div>
+                    <small class="text-muted">
+                        Table & analysis use ALL readings from this 90-sec test.
+                        Charts only show the latest ~20 seconds for readability.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ------------------------------------------------------------------------------------
+    // CONFIG
+    // ------------------------------------------------------------------------------------
+    // API is expected to send RAW sensor values:
+    // - emg_raw[] : 0–4095  (ADC)
+    // - emg_voltage    : 0–4095  (ADC)
+    // - acc_x/y/z : RAW MPU6050 accelerometer registers
+    // - gyro_x/y/z: RAW MPU6050 gyro registers
+    //
+    // This file converts:
+    // - emg_raw, emg_voltage → 0–100 % (linear from 0–4095)
+    // - accel    → m/s²
+    // - gyro     → deg/s
+    // ------------------------------------------------------------------------------------
+
+    const API_URL = "/api/sensor-data/list/?limit=200";
+    const TEST_DURATION = 90;           // seconds for full test
+    const GRAPH_WINDOW_POINTS = 20;     // show last ~20 samples
+
+    // ADC + MPU6050 calibration
+    const ADC_MAX = 4095.0;
+    const ACC_LSB_PER_G = 16384.0;  // ±2g sensitivity
+    const G_TO_MS2 = 9.81;
+    const GYRO_LSB_PER_DPS = 131.0; // ±250 deg/s
+
+    let emg_rawChart = null;
+    let accChart = null;
+
+    let monitoring = false;
+    let monitorIntervalId = null;
+    let countdown = 0;
+    let countdownTimerId = null;
+
+    let sessionData = [];          // all readings in current 90-sec test
+    let sessionIdSet = new Set();  // to avoid duplicates by reading.id
+    let testStartTime = null;
+
+    // Tremor score heuristic: map 0–10 deg/s → 0–100 index
+    function computeTremorScore(avgGyroMagDps) {
+        const clamped = Math.max(0, Math.min(avgGyroMagDps, 10));
+        return (clamped / 10) * 100;
+    }
+
+    // ------------------------------------------------------------------------------------
+    // CHART INIT
+    // ------------------------------------------------------------------------------------
+    function initCharts() {
+        const emg_rawCtx = document.getElementById("emg_rawChart").getContext("2d");
+        const accCtx = document.getElementById("accChart").getContext("2d");
+
+        emg_rawChart = new Chart(emg_rawCtx, {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [
+                    { label: "Thumb",  data: [], borderWidth: 1 },
+                    { label: "Index",  data: [], borderWidth: 1 },
+                    { label: "Middle", data: [], borderWidth: 1 },
+                    { label: "Ring",   data: [], borderWidth: 1 },
+                    { label: "Little", data: [], borderWidth: 1 },
+                ],
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        min: 0,
+                        max: 100,
+                        title: { display: true, text: "EMG (%)" }
+                    }
+                }
+            }
+        });
+
+        accChart = new Chart(accCtx, {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [
+                    { label: "Acc Z (m/s²)", data: [], borderWidth: 1 },
+                ],
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        title: { display: true, text: "Accel Z (m/s²)" }
+                    }
+                }
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------------------------
+    // CALIBRATION HELPERS
+    // ------------------------------------------------------------------------------------
+    // RAW emg_raw/EMG ADC → %
+    function toEMGPercent(raw) {
+        if (raw === null || raw === undefined) return null;
+        const perc = (raw / ADC_MAX) * 100.0;
+        return Math.max(0, Math.min(100, perc));
+    }
+
+    function toEMGPercent(raw) {
+        if (raw === null || raw === undefined) return null;
+        const perc = (raw / ADC_MAX) * 100.0;
+        return Math.max(0, Math.min(100, perc));
+    }
+
+    // RAW accel → m/s²
+    function toAccMs2(raw) {
+        if (raw === null || raw === undefined) return 0;
+        return (raw / ACC_LSB_PER_G) * G_TO_MS2;
+    }
+
+    // RAW gyro → deg/s
+    function toGyroDps(raw) {
+        if (raw === null || raw === undefined) return 0;
+        return raw / GYRO_LSB_PER_DPS;
+    }
+
+    // ------------------------------------------------------------------------------------
+    // MAIN DASHBOARD UPDATE
+    // ------------------------------------------------------------------------------------
+    function updateDashboard(apiData) {
+        if (!Array.isArray(apiData) || apiData.length === 0) return;
+
+        let fullWindowData;
+
+        if (testStartTime) {
+            apiData.forEach(r => {
+                if (!r.id) return;
+                const t = new Date(r.timestamp);
+                if (t >= testStartTime) {
+                    if (!sessionIdSet.has(r.id)) {
+                        sessionIdSet.add(r.id);
+                        sessionData.push(r);
+                    }
+                }
+            });
+            sessionData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            fullWindowData = sessionData;
+        } else {
+            fullWindowData = apiData
+                .slice()
+                .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        }
+
+        if (fullWindowData.length === 0) return;
+
+        const latest = fullWindowData[fullWindowData.length - 1];
+
+        // Last timestamp
+        document.getElementById("last-timestamp").innerText =
+            new Date(latest.timestamp).toLocaleString();
+
+        // -------- Quick cards from latest --------
+        // EMG (% from raw ADC)
+        const emg_voltagePerc = toEMGPercent(latest.emg_voltage ?? 0);
+        document.getElementById("emg_voltage-value").innerText =
+            emg_voltagePerc !== null ? emg_voltagePerc.toFixed(1) : "--";
+
+        // Accel from raw
+        const rawAx = latest.acc_x ?? latest.acc?.x ?? 0;
+        const rawAy = latest.acc_y ?? latest.acc?.y ?? 0;
+        const rawAz = latest.acc_z ?? latest.acc?.z ?? 0;
+
+        const axMs2 = toAccMs2(rawAx);
+        const ayMs2 = toAccMs2(rawAy);
+        const azMs2 = toAccMs2(rawAz);
+
+        const accMag = Math.sqrt(axMs2*axMs2 + ayMs2*ayMs2 + azMs2*azMs2).toFixed(2);
+        document.getElementById("acc-magnitude").innerText = accMag;
+
+        // Gyro from raw
+        const rawGx = latest.gyro_x ?? latest.gyro?.x ?? 0;
+        const rawGy = latest.gyro_y ?? latest.gyro?.y ?? 0;
+        const rawGz = latest.gyro_z ?? latest.gyro?.z ?? 0;
+
+        const gxDps = toGyroDps(rawGx);
+        const gyDps = toGyroDps(rawGy);
+        const gzDps = toGyroDps(rawGz);
+
+        const gyroMag = Math.sqrt(gxDps*gxDps + gyDps*gyDps + gzDps*gzDps).toFixed(3);
+        document.getElementById("gyro-activity").innerText = gyroMag;
+
+        // EMG latest (% from raw ADC)
+        const emg_rawLatestRaw = latest.emg_raw || [null, null, null, null, null];
+        const emg_rawLatestPerc = emg_rawLatestRaw.map(toEMGPercent);
+
+        document.getElementById("emg_raw-thumb").innerText  =
+            emg_rawLatestPerc[0] !== null ? emg_rawLatestPerc[0].toFixed(1) : "--";
+        document.getElementById("emg_raw-index").innerText  =
+            emg_rawLatestPerc[1] !== null ? emg_rawLatestPerc[1].toFixed(1) : "--";
+        document.getElementById("emg_raw-middle").innerText =
+            emg_rawLatestPerc[2] !== null ? emg_rawLatestPerc[2].toFixed(1) : "--";
+        document.getElementById("emg_raw-ring").innerText   =
+            emg_rawLatestPerc[3] !== null ? emg_rawLatestPerc[3].toFixed(1) : "--";
+        document.getElementById("emg_raw-little").innerText =
+            emg_rawLatestPerc[4] !== null ? emg_rawLatestPerc[4].toFixed(1) : "--";
+
+        // -------- Table – full test, latest on top --------
+        const tbody = document.getElementById("readings-table-body");
+        tbody.innerHTML = "";
+        fullWindowData.slice().reverse().forEach(row => {
+            const tr = document.createElement("tr");
+
+            // Time
+            const t = document.createElement("td");
+            t.innerText = new Date(row.timestamp).toLocaleTimeString();
+            tr.appendChild(t);
+
+            // EMG row
+            const emg_rawRaw = row.emg_raw || [];
+            const emg_rawPercRow = emg_rawRaw.map(toEMGPercent).map(v =>
+                v !== null ? v.toFixed(1) : "--"
+            );
+            const f = document.createElement("td");
+            f.innerText = emg_rawPercRow.join(", ");
+            tr.appendChild(f);
+
+            // EMG
+            const emg_voltageCell = document.createElement("td");
+            const rowFsrPerc = toEMGPercent(row.emg_voltage ?? 0);
+            emg_voltageCell.innerText = rowFsrPerc !== null ? rowFsrPerc.toFixed(1) : "--";
+            tr.appendChild(emg_voltageCell);
+
+            // Acc (convert per row)
+            const rax = row.acc_x ?? row.acc?.x ?? 0;
+            const ray = row.acc_y ?? row.acc?.y ?? 0;
+            const raz = row.acc_z ?? row.acc?.z ?? 0;
+
+            const raxMs2 = toAccMs2(rax);
+            const rayMs2 = toAccMs2(ray);
+            const razMs2 = toAccMs2(raz);
+
+            const accTd = document.createElement("td");
+            accTd.innerText = `${raxMs2.toFixed(2)}, ${rayMs2.toFixed(2)}, ${razMs2.toFixed(2)}`;
+            tr.appendChild(accTd);
+
+            // Gyro (convert per row)
+            const rgx = row.gyro_x ?? row.gyro?.x ?? 0;
+            const rgy = row.gyro_y ?? row.gyro?.y ?? 0;
+            const rgz = row.gyro_z ?? row.gyro?.z ?? 0;
+
+            const rgxDps = toGyroDps(rgx);
+            const rgyDps = toGyroDps(rgy);
+            const rgzDps = toGyroDps(rgz);
+
+            const gyroTd = document.createElement("td");
+            gyroTd.innerText = `${rgxDps.toFixed(3)}, ${rgyDps.toFixed(3)}, ${rgzDps.toFixed(3)}`;
+            tr.appendChild(gyroTd);
+
+            tbody.appendChild(tr);
+        });
+
+        // ---------- GRAPHS: ONLY LAST ~20 POINTS ----------
+        const graphData = fullWindowData.slice(-GRAPH_WINDOW_POINTS);
+
+        const labels = graphData.map(d => new Date(d.timestamp).toLocaleTimeString());
+        emg_rawChart.data.labels = labels;
+        accChart.data.labels = labels;
+
+        const emg_rawThumbRaw  = graphData.map(d => (d.emg_raw || [null])[0]);
+        const emg_rawIndexRaw  = graphData.map(d => (d.emg_raw || [null, null])[1]);
+        const emg_rawMiddleRaw = graphData.map(d => (d.emg_raw || [null, null, null])[2]);
+        const emg_rawRingRaw   = graphData.map(d => (d.emg_raw || [null, null, null, null])[3]);
+        const emg_rawLittleRaw = graphData.map(d => (d.emg_raw || [null, null, null, null, null])[4]);
+
+        emg_rawChart.data.datasets[0].data = emg_rawThumbRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[1].data = emg_rawIndexRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[2].data = emg_rawMiddleRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[3].data = emg_rawRingRaw.map(toEMGPercent);
+        emg_rawChart.data.datasets[4].data = emg_rawLittleRaw.map(toEMGPercent);
+
+        const accZMs2 = graphData.map(d => {
+            const rawZ = d.acc_z ?? d.acc?.z ?? 0;
+            return toAccMs2(rawZ);
+        });
+        accChart.data.datasets[0].data = accZMs2;
+
+        emg_rawChart.update();
+        accChart.update();
+
+        // ---------- ANALYSIS: FULL 90-SEC TEST DATA ----------
+        const total = fullWindowData.length;
+        document.getElementById("total-readings").innerText = total;
+
+        // Average EMG (%)
+        const avgFsrRaw = fullWindowData.reduce((sum, r) => sum + (r.emg_voltage || 0), 0) / total;
+        const avgFsrPerc = toEMGPercent(avgFsrRaw);
+        document.getElementById("avg-emg_voltage").innerText =
+            avgFsrPerc !== null ? avgFsrPerc.toFixed(1) : "--";
+
+        let accMagSum = 0;
+        let gyroMagSum = 0;
+
+        fullWindowData.forEach(r => {
+            const xRaw = r.acc_x ?? r.acc?.x ?? 0;
+            const yRaw = r.acc_y ?? r.acc?.y ?? 0;
+            const zRaw = r.acc_z ?? r.acc?.z ?? 0;
+
+            const xMs2 = toAccMs2(xRaw);
+            const yMs2 = toAccMs2(yRaw);
+            const zMs2 = toAccMs2(zRaw);
+            accMagSum += Math.sqrt(xMs2*xMs2 + yMs2*yMs2 + zMs2*zMs2);
+
+            const gxRaw2 = r.gyro_x ?? r.gyro?.x ?? 0;
+            const gyRaw2 = r.gyro_y ?? r.gyro?.y ?? 0;
+            const gzRaw2 = r.gyro_z ?? r.gyro?.z ?? 0;
+
+            const gxDps2 = toGyroDps(gxRaw2);
+            const gyDps2 = toGyroDps(gyRaw2);
+            const gzDps2 = toGyroDps(gzRaw2);
+            gyroMagSum += Math.sqrt(gxDps2*gxDps2 + gyDps2*gyDps2 + gzDps2*gzDps2);
+        });
+
+        const avgAccMag = accMagSum / total;
+        const avgGyroMag = gyroMagSum / total;
+        document.getElementById("avg-acc-mag").innerText = avgAccMag.toFixed(2);
+        document.getElementById("avg-gyro-activity").innerText = avgGyroMag.toFixed(3);
+
+        function avg(arr) {
+            const valid = arr.filter(v => v !== null && v !== undefined);
+            if (!valid.length) return null;
+            return valid.reduce((s, v) => s + v, 0) / valid.length;
+        }
+
+        // Average emg_raw per finger over full test (%)
+        const fullEMGThumbRaw  = fullWindowData.map(d => (d.emg_raw || [null])[0]);
+        const fullEMGIndexRaw  = fullWindowData.map(d => (d.emg_raw || [null, null])[1]);
+        const fullEMGMiddleRaw = fullWindowData.map(d => (d.emg_raw || [null, null, null])[2]);
+        const fullEMGRingRaw   = fullWindowData.map(d => (d.emg_raw || [null, null, null, null])[3]);
+        const fullEMGLittleRaw = fullWindowData.map(d => (d.emg_raw || [null, null, null, null, null])[4]);
+
+        const fullEMGThumbPerc  = fullEMGThumbRaw.map(toEMGPercent);
+        const fullEMGIndexPerc  = fullEMGIndexRaw.map(toEMGPercent);
+        const fullEMGMiddlePerc = fullEMGMiddleRaw.map(toEMGPercent);
+        const fullEMGRingPerc   = fullEMGRingRaw.map(toEMGPercent);
+        const fullEMGLittlePerc = fullEMGLittleRaw.map(toEMGPercent);
+
+        const avgEMGThumb  = avg(fullEMGThumbPerc);
+        const avgEMGIndex  = avg(fullEMGIndexPerc);
+        const avgEMGMiddle = avg(fullEMGMiddlePerc);
+        const avgEMGRing   = avg(fullEMGRingPerc);
+        const avgEMGLittle = avg(fullEMGLittlePerc);
+
+        document.getElementById("avg-emg_raw-thumb").innerText  =
+            avgEMGThumb  !== null ? avgEMGThumb.toFixed(1)  : "--";
+        document.getElementById("avg-emg_raw-index").innerText  =
+            avgEMGIndex  !== null ? avgEMGIndex.toFixed(1)  : "--";
+        document.getElementById("avg-emg_raw-middle").innerText =
+            avgEMGMiddle !== null ? avgEMGMiddle.toFixed(1) : "--";
+        document.getElementById("avg-emg_raw-ring").innerText   =
+            avgEMGRing   !== null ? avgEMGRing.toFixed(1)   : "--";
+        document.getElementById("avg-emg_raw-little").innerText =
+            avgEMGLittle !== null ? avgEMGLittle.toFixed(1) : "--";
+
+        // Tremor score from average gyro magnitude (deg/s)
+        const tremorScore = computeTremorScore(avgGyroMag);
+        document.getElementById("tremor-score").innerText = tremorScore.toFixed(1);
+    }
+
+    // ------------------------------------------------------------------------------------
+    // FETCH + MONITORING CONTROL
+    // ------------------------------------------------------------------------------------
+    async function fetchDataAndUpdate() {
+        try {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            updateDashboard(data);
+        } catch (err) {
+            console.error("Error fetching data:", err);
+        }
+    }
+
+    function startMonitoring() {
+        if (monitoring) return;
+        monitoring = true;
+
+        // Reset session data for a fresh 90-sec test
+        sessionData = [];
+        sessionIdSet = new Set();
+
+        document.getElementById("monitor-status").innerText = "Monitoring: ON";
+        document.getElementById("btn-start").disabled = true;
+        document.getElementById("btn-stop").disabled = false;
+
+        testStartTime = new Date();
+
+        fetchDataAndUpdate();
+        monitorIntervalId = setInterval(fetchDataAndUpdate, 1000);
+
+        countdown = TEST_DURATION;
+        document.getElementById("timer").innerText = "Time left: " + countdown + "s";
+
+        countdownTimerId = setInterval(() => {
+            countdown--;
+            document.getElementById("timer").innerText = "Time left: " + countdown + "s";
+            if (countdown <= 0) {
+                stopMonitoring(true);
+            }
+        }, 1000);
+    }
+
+    function stopMonitoring(autoSave = false) {
+        if (!monitoring) return;
+        monitoring = false;
+
+        document.getElementById("monitor-status").innerText = "Monitoring: OFF";
+        document.getElementById("btn-start").disabled = false;
+        document.getElementById("btn-stop").disabled = true;
+
+        if (monitorIntervalId !== null) {
+            clearInterval(monitorIntervalId);
+            monitorIntervalId = null;
+        }
+
+        if (countdownTimerId !== null) {
+            clearInterval(countdownTimerId);
+            countdownTimerId = null;
+        }
+
+        document.getElementById("timer").innerText = "Time left: --";
+
+        const testEndTime = new Date();
+
+        if (autoSave && sessionData.length > 0) {
+            saveTestResultToServer(testStartTime, testEndTime, sessionData);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------
+    // SAVE TEST SESSION SUMMARY
+    // ------------------------------------------------------------------------------------
+    async function saveTestResultToServer(startTime, endTime, dataWindow) {
+        const patientId = document.body.dataset.patientId;
+        if (!patientId) {
+            console.warn("No patient_id – not saving test");
+            return;
+        }
+        if (!Array.isArray(dataWindow) || dataWindow.length === 0) return;
+
+        const total = dataWindow.length;
+
+        const avgFsrRaw = dataWindow.reduce((sum, r) => sum + (r.emg_voltage || 0), 0) / total;
+        const avgFsrPerc = toEMGPercent(avgFsrRaw);
+
+        let accMagSum = 0;
+        let gyroMagSum = 0;
+
+        const emg_rawThumbPerc  = [];
+        const emg_rawIndexPerc  = [];
+        const emg_rawMiddlePerc = [];
+        const emg_rawRingPerc   = [];
+        const emg_rawLittlePerc = [];
+
+        dataWindow.forEach(r => {
+            const xRaw = r.acc_x ?? r.acc?.x ?? 0;
+            const yRaw = r.acc_y ?? r.acc?.y ?? 0;
+            const zRaw = r.acc_z ?? r.acc?.z ?? 0;
+
+            const xMs2 = toAccMs2(xRaw);
+            const yMs2 = toAccMs2(yRaw);
+            const zMs2 = toAccMs2(zRaw);
+            accMagSum += Math.sqrt(xMs2*xMs2 + yMs2*yMs2 + zMs2*zMs2);
+
+            const gxRaw2 = r.gyro_x ?? r.gyro?.x ?? 0;
+            const gyRaw2 = r.gyro_y ?? r.gyro?.y ?? 0;
+            const gzRaw2 = r.gyro_z ?? r.gyro?.z ?? 0;
+
+            const gxDps2 = toGyroDps(gxRaw2);
+            const gyDps2 = toGyroDps(gyRaw2);
+            const gzDps2 = toGyroDps(gzRaw2);
+            gyroMagSum += Math.sqrt(gxDps2*gxDps2 + gyDps2*gyDps2 + gzDps2*gzDps2);
+
+            const f = r.emg_raw || [];
+            if (f.length >= 1) emg_rawThumbPerc.push(toEMGPercent(f[0]));
+            if (f.length >= 2) emg_rawIndexPerc.push(toEMGPercent(f[1]));
+            if (f.length >= 3) emg_rawMiddlePerc.push(toEMGPercent(f[2]));
+            if (f.length >= 4) emg_rawRingPerc.push(toEMGPercent(f[3]));
+            if (f.length >= 5) emg_rawLittlePerc.push(toEMGPercent(f[4]));
+        });
+
+        const avgAccMag = accMagSum / total;
+        const avgGyroMag = gyroMagSum / total;
+        const tremorScore = computeTremorScore(avgGyroMag);
+
+        function avg(arr) {
+            const valid = arr.filter(v => v !== null && v !== undefined);
+            if (!valid.length) return null;
+            return valid.reduce((s, v) => s + v, 0) / valid.length;
+        }
+
+        const payload = {
+            patient_id: parseInt(patientId),
+            started_at: startTime.toISOString(),
+            ended_at: endTime.toISOString(),
+            num_readings: total,
+            avg_emg_voltage: avgFsrPerc !== null ? avgFsrPerc : 0,
+            avg_acc_mag: avgAccMag,
+            avg_gyro_mag: avgGyroMag,
+            avg_emg_raw: {
+                thumb:  avg(emg_rawThumbPerc),
+                index:  avg(emg_rawIndexPerc),
+                middle: avg(emg_rawMiddlePerc),
+                ring:   avg(emg_rawRingPerc),
+                little: avg(emg_rawLittlePerc),
+            },
+            tremor_score: tremorScore,
+        };
+
+        try {
+            const response = await fetch("/api/test-session/save/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            console.log("Test session saved:", data);
+
+            if (response.ok && data.id) {
+                const summaryUrl = `/api/test-session/${data.id}/summary/`;
+                window.open(summaryUrl, "_blank");
+            } else {
+                console.error("Save test error:", response.status, data);
+                alert("Test save failed: " + (data.error || ("HTTP " + response.status)));
+            }
+        } catch (err) {
+            console.error("Error saving test session:", err);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------
+    // DOM READY
+    // ------------------------------------------------------------------------------------
+    document.addEventListener("DOMContentLoaded", () => {
+        initCharts();
+
+        document.getElementById("btn-start").addEventListener("click", startMonitoring);
+        document.getElementById("btn-stop").addEventListener("click", () => stopMonitoring(false));
+
+        document.getElementById("btn-export-emg_raw").addEventListener("click", () => {
+            if (!emg_rawChart) return;
+            const link = document.createElement("a");
+            link.href = emg_rawChart.toBase64Image();
+            link.download = "emg_raw_chart_last20sec.png";
+            link.click();
+        });
+
+        document.getElementById("btn-export-acc").addEventListener("click", () => {
+            if (!accChart) return;
+            const link = document.createElement("a");
+            link.href = accChart.toBase64Image();
+            link.download = "tremor_chart_last20sec.png";
+            link.click();
+        });
+    });
+</script>
+
+</body>
+</html>

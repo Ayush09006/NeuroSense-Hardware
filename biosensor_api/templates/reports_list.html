@@ -1,0 +1,88 @@
+{% extends "base_dashboard.html" %}
+{% block title %}NeuroSense - Reports Center{% endblock %}
+{% block page_title %}Clinical Report Center{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-md-12">
+        <div class="card-clean p-4 border border-light shadow-sm bg-white" style="border-radius: 12px;">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
+                <div>
+                    <h5 class="fw-bold mb-1">Generated Test Reports</h5>
+                    <div class="text-muted small">Review and print PDF summaries for diagnostic documentation.</div>
+                </div>
+                <!-- Find Option -->
+                <div style="max-width: 300px; width: 100%;">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white text-muted border-end-0 border-light" style="border-radius: 8px 0 0 8px;">🔍</span>
+                        <input type="text" id="reportSearch" class="form-control border-start-0 ps-0 border-light shadow-none" style="border-radius: 0 8px 8px 0;" placeholder="Find patient or date...">
+                    </div>
+                </div>
+            </div>
+
+            {% if tests %}
+            <div class="row g-3">
+                {% for test in tests %}
+                <div class="col-md-4 report-card-container">
+                    <div class="card h-100 shadow-sm border-0 bg-white" style="border-radius: 12px;">
+                         <div class="card-body p-4">
+                              <div class="d-flex align-items-center mb-3">
+                                   <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold me-3" style="width:40px; height:40px; background: linear-gradient(135deg, var(--brand-main), var(--brand-light)); color: var(--text-dark) !important;">
+                                       {{ test.patient.name|slice:":1"|upper }}
+                                   </div>
+                                   <div>
+                                       <h6 class="mb-0 fw-bold">{{ test.patient.name }}</h6>
+                                       <small class="text-muted d-block mt-1">{{ test.created_at|date:"M d, Y" }}</small>
+                                   </div>
+                              </div>
+                              <hr class="text-muted opacity-25">
+                              <div class="d-flex justify-content-between text-muted small mb-2">
+                                  <span>Tremor Index:</span>
+                                  <strong class="{% if test.tremor_score >= 70 %}text-danger{% else %}text-success{% endif %}">{{ test.tremor_score|floatformat:1 }}</strong>
+                              </div>
+                              <div class="d-flex justify-content-between text-muted small">
+                                  <span>Status:</span>
+                                  <span>{% if test.tremor_score >= 70 %}Abnormal{% else %}Normal{% endif %}</span>
+                              </div>
+                              <a href="/api/test-session/{{ test.id }}/summary/" target="_blank" class="btn btn-outline-secondary btn-sm w-100 mt-4 rounded-3 d-flex justify-content-center align-items-center gap-2">
+                                  📄 View PDF Report
+                              </a>
+                         </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-5">
+                <p>No reports available yet.</p>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const searchInput = document.getElementById("reportSearch");
+        if (!searchInput) return;
+
+        searchInput.addEventListener("keyup", function () {
+            const filter = searchInput.value.toLowerCase();
+            const cards = document.querySelectorAll(".report-card-container");
+
+            cards.forEach(card => {
+                // Read text inside the card to filter matches
+                const text = card.innerText.toLowerCase();
+                if (text.includes(filter)) {
+                    card.style.display = "";
+                } else {
+                    card.style.display = "none";
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

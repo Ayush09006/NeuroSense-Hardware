@@ -1,0 +1,309 @@
+{% extends "base_dashboard.html" %}
+
+{% block title %}Test Result – {{ session.patient.name }}{% endblock %}
+{% block page_title %}Test Details: {{ session.patient.name }}{% endblock %}
+
+{% block topbar_actions %}
+<button onclick="window.print()" class="btn btn-sm btn-light border d-none d-md-block me-2">
+    🖨 Print PDF
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .container-main {
+        max-width: 1080px;
+        margin: 0 auto;
+    }
+
+    .card-panel {
+        background: var(--card-bg);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid var(--border-color);
+    }
+
+    .columns {
+        display: flex;
+        justify-content: center;
+        gap: 16px;
+    }
+
+    .col {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .tremor-value {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: var(--metric-red);
+    }
+
+    .badge-score {
+        background: linear-gradient(90deg, var(--brand-main), var(--brand-light));
+        color: var(--text-dark);
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+
+    .meta-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        color: var(--text-muted);
+    }
+
+    .meta-list li {
+        margin: 10px 0;
+        font-size: 0.95rem;
+    }
+
+    .channel-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .channel-box {
+        background: #fbfcfd;
+        border-radius: 10px;
+        padding: 12px;
+        text-align: center;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.04);
+    }
+
+    .channel-label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    .channel-value {
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+
+    .channel-full {
+        grid-column: 1 / -1;
+    }
+
+    @media(max-width: 860px) {
+        .columns { flex-direction: column; }
+    }
+
+    /* ================= PRINT FIX ================= */
+    @media print {
+        /* Hide UI */
+        .sidebar, .topbar, button, a {
+            display: none !important;
+        }
+
+        html, body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 12px;
+        }
+
+        .container-main {
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 10px !important;
+        }
+
+        .sidebar { display: none !important; width: 0 !important; }
+        .main-content { margin-left: 0 !important; flex: 1 !important; display: block !important; }
+        
+        /* Print block break */
+        .columns { display: flex !important; flex-direction: row !important; gap: 10px !important; }
+        .col { display: block !important; flex: 1 !important; max-width: none !important; }
+
+        /* Clean look */
+        .card-panel {
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            border: 1px solid #ddd;
+        }
+
+        h4, h6 {
+            margin: 6px 0 !important;
+        }
+
+        hr {
+            margin: 6px 0 !important;
+        }
+
+        @page {
+            margin: 12mm;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-main">
+
+    <!-- HEADER -->
+    <div class="card-panel">
+        <h4>
+            Test Result —
+            <span style="color:var(--brand-main)">{{ session.patient.name }}</span>
+        </h4>
+        <small class="text-muted">
+            Patient ID: {{ session.patient.patient_id }} |
+            Created: {{ session.created_at }}
+        </small>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="columns">
+
+        <!-- LEFT COLUMN -->
+        <div class="col">
+
+            <div class="card-panel">
+                <h6>Tremor Index</h6>
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="tremor-value">
+                            {{ session.tremor_score|floatformat:1 }} / 100
+                        </div>
+                        <small class="text-muted">
+                            Normal: 0 – 30 |
+                            Abnormal Tremor: ≥ 70
+                        </small>
+                    </div>
+                    <div class="badge-score">Tremor Score</div>
+                </div>
+
+                <hr>
+
+                <ul class="meta-list">
+                    <li>
+                        <strong>Average Gyroscope Magnitude:</strong>
+                        {{ session.avg_gyro_mag|default:"--"|floatformat:4 }} rad/s
+                        <br>
+                        <small>
+                            Normal: ≤ 0.20 rad/s |
+                            Abnormal Tremor: ≥ 0.50 rad/s
+                        </small>
+                    </li>
+
+                    <li>
+                        <strong>Average Acceleration Magnitude:</strong>
+                        {{ session.avg_acc_mag|default:"--"|floatformat:2 }} m/s²
+                        <br>
+                        <small>
+                            Normal: 9.6 – 10.2 m/s² |
+                            Abnormal Tremor: unstable / high variation
+                        </small>
+                    </li>
+
+                    <li>
+                        <strong>Average EMG Amplitude (EMG):</strong>
+                        {{ session.avg_emg_voltage|default:"--"|floatformat:1 }} %
+                        <br>
+                        <small>
+                            Normal: 60 – 90 % |
+                            Abnormal Tremor: ≤ 40 %
+                        </small>
+                    </li>
+
+                    <li>
+                        <strong>Readings Analyzed:</strong>
+                        {{ session.num_readings }}
+                    </li>
+
+                    <li>
+                        <strong>Test Duration:</strong>
+                        {{ session.started_at|time:"H:i:s" }} → {{ session.ended_at|time:"H:i:s" }}
+                    </li>
+                </ul>
+
+                <div class="mt-3">
+                    {% if session.tremor_score < 30 %}
+                        <div class="alert alert-success py-2">
+                            Normal range – movement appears stable.
+                        </div>
+                    {% elif session.tremor_score < 70 %}
+                        <div class="alert alert-warning py-2">
+                            Borderline range – monitoring recommended.
+                        </div>
+                    {% else %}
+                        <div class="alert alert-danger py-2">
+                            Tremor detected – clinical correlation advised.
+                        </div>
+                    {% endif %}
+                    <small class="text-muted">
+                        Automated supportive assessment only.
+                    </small>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="col">
+            <div class="card-panel h-100">
+                <h6 class="mb-3">EMG Channels Summary (Averaged)</h6>
+
+                <div class="channel-grid">
+                    <div class="channel-box">
+                        <div class="channel-label">Ch 1 (EMG 1)</div>
+                        <div class="channel-value" style="color:#3b82f6;">
+                            {{ session.avg_ch1|default:"--"|floatformat:1 }} %
+                        </div>
+                    </div>
+
+                    <div class="channel-box">
+                        <div class="channel-label">Ch 2 (EMG 2)</div>
+                        <div class="channel-value" style="color:#ef4444;">
+                            {{ session.avg_ch2|default:"--"|floatformat:1 }} %
+                        </div>
+                    </div>
+
+                    <div class="channel-box">
+                        <div class="channel-label">Ch 3 (EMG 3)</div>
+                        <div class="channel-value" style="color:#eab308;">
+                            {{ session.avg_ch3|default:"--"|floatformat:1 }} %
+                        </div>
+                    </div>
+
+                    <div class="channel-box">
+                        <div class="channel-label">Ch 4 (EMG 4)</div>
+                        <div class="channel-value" style="color:#10b981;">
+                            {{ session.avg_ch4|default:"--"|floatformat:1 }} %
+                        </div>
+                    </div>
+
+                    <div class="channel-box channel-full mt-2">
+                        <div class="channel-label">Ch 5 (EMG 5) Average</div>
+                        <div class="channel-value" style="color:#8b5cf6;">
+                            {{ session.avg_ch5|default:"--"|floatformat:1 }} %
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- DISCLAIMER -->
+    <p class="text-muted small mt-4">
+        Normal and abnormal tremor ranges are indicative reference values used for
+        comparison only. This system provides supportive assessment and does not
+        replace clinical diagnosis.
+    </p>
+
+</div>
+{% endblock %}

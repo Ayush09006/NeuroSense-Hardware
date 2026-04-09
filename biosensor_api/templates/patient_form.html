@@ -1,0 +1,175 @@
+{% extends "base_dashboard.html" %}
+{% block title %}NeuroSense - Add Patient{% endblock %}
+{% block page_title %}NeuroSense Intake{% endblock %}
+
+{% block topbar_actions %}
+<a href="/patients/" class="btn btn-outline-secondary d-none d-md-block">Back to Patients</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card-modern { border:0; border-radius:12px; box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.05); background:#fff; }
+    .section-title{ font-size:0.78rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--text-muted); margin-bottom:0.5rem; }
+    .required-star{ color:#dc2626; margin-left:4px; }
+    .form-control, .form-select, .form-control:focus{ border-radius:10px; box-shadow:none; border:1px solid #e2e8f0; }
+    .hint{ color:var(--text-muted); font-size:0.9rem; }
+    .avatar-circle{ background:linear-gradient(180deg,var(--brand-main),var(--brand-light)); width:64px; height:64px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1.25rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-wrapper" style="max-width: 900px; margin: 0 auto;">
+
+    <div class="card-modern card p-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <div class="section-title">New Patient</div>
+          <h4 class="mb-0">Register Patient Profile</h4>
+        </div>
+        <div class="text-end">
+          <span class="badge" style="background:linear-gradient(90deg,var(--brand-main),var(--brand-light)); color:var(--text-dark); border-radius:999px; padding:6px 10px; font-weight:600;">NeuroSense – Intake</span>
+        </div>
+      </div>
+
+      <hr>
+
+      {% if error %}
+        <div class="alert alert-danger mb-3">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" novalidate id="addPatientForm">
+        {% csrf_token %}
+
+        <div class="row g-3">
+          <!-- left column -->
+          <div class="col-lg-7">
+
+            <div class="section-title">Basic Information</div>
+
+            <div class="mb-3">
+              <label class="form-label">Full Name <span class="required-star">*</span></label>
+              <input name="name" id="name" type="text" class="form-control" required>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Age</label>
+                <input name="age" type="number" min="0" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Gender</label>
+                <select name="gender" class="form-select">
+                  <option value="">Select</option>
+                  <option>Male</option>
+                  <option>Female</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Patient ID / Hospital ID <span class="required-star">*</span></label>
+              <div class="input-group">
+                <input name="patient_id" id="patient_id" type="text" class="form-control" required>
+                <button type="button" class="btn btn-outline-secondary" id="genIdBtn" title="Generate ID"><i class="bi bi-shuffle"></i></button>
+              </div>
+              <small class="hint">Must be unique. Click the shuffle icon to auto-generate a suggestion.</small>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Diagnosis</label>
+              <input name="diagnosis" type="text" class="form-control" placeholder="e.g. Suspected Parkinson's, PD Stage II">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="4" placeholder="Any important history, medications, or clinical observations..."></textarea>
+            </div>
+
+          </div>
+
+          <!-- right column -->
+          <div class="col-lg-5">
+            <div class="card-modern card p-3 h-100">
+              <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="avatar-circle">A</div>
+                <div>
+                  <div class="small-muted">Patient Preview</div>
+                  <div id="previewName" class="fw-semibold">—</div>
+                  <div id="previewId" class="text-muted small">ID: —</div>
+                </div>
+              </div>
+
+              <hr>
+
+              <div class="mb-2">
+                <div class="section-title">Quick Actions</div>
+                <div class="d-grid gap-2">
+                  <button type="button" class="btn btn-outline-secondary" id="btnPreview">Preview</button>
+                  <a href="/patients/" class="btn btn-outline-danger">Cancel</a>
+                </div>
+              </div>
+
+              <hr>
+
+              <div>
+                <div class="section-title">Tips</div>
+                <ul class="mb-0 small text-muted">
+                  <li>Use unique patient IDs (MRN or hospital code).</li>
+                  <li>Include brief diagnosis to help triage.</li>
+                  <li>You can edit details later from the patient profile.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <small class="text-muted">Fields with <span class="required-star">*</span> are mandatory.</small>
+          <div>
+            <button class="btn btn-primary" type="submit">Save Patient</button>
+            <a href="/patients/" class="btn btn-secondary ms-2">Cancel</a>
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+  // generate pseudo-unique ID (client-side suggestion only)
+  document.getElementById('genIdBtn').addEventListener('click', function(){
+    const prefix = 'MRN';
+    const rand = Math.random().toString(36).slice(2,8).toUpperCase();
+    const id = prefix + '-' + rand;
+    document.getElementById('patient_id').value = id;
+    updatePreview();
+  });
+
+  // preview name/id
+  function updatePreview(){
+    const name = document.getElementById('name').value.trim();
+    const pid = document.getElementById('patient_id').value.trim();
+    document.getElementById('previewName').innerText = name || '—';
+    document.getElementById('previewId').innerText = pid ? ('ID: ' + pid) : 'ID: —';
+    const avatar = document.querySelector('.avatar-circle');
+    if(name){ avatar.innerText = name.charAt(0).toUpperCase(); }
+  }
+
+  document.getElementById('name').addEventListener('input', updatePreview);
+  document.getElementById('patient_id').addEventListener('input', updatePreview);
+
+  // simple client-side validation to prevent empty required fields
+  document.getElementById('addPatientForm').addEventListener('submit', function(e){
+    const name = document.getElementById('name').value.trim();
+    const pid = document.getElementById('patient_id').value.trim();
+    if(!name || !pid){
+      e.preventDefault();
+      alert('Please fill required fields: Full Name and Patient ID.');
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neurological Biosensor Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for live graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f3f6f9; /* Soft medical background */
+            font-family: 'Inter', sans-serif;
+            color: #2c3e50;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 24px;
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        /* Custom scrollbar for better appearance */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="p-6">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+
+        <!-- Header -->
+        <header class="flex justify-between items-center pb-4 border-b border-gray-200">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Biosensor Monitor</h1>
+                <p class="text-gray-500 text-sm mt-1">Real-time EMG & Motion Stability Diagnostics</p>
+            </div>
+            <div class="flex items-center space-x-3 text-sm">
+                <div id="connectionStatus" class="flex items-center text-green-600 font-semibold px-4 py-2 bg-green-50 rounded-full">
+                    <span class="w-2 h-2 rounded-full bg-green-500 mr-2 pulse"></span>
+                    System Online
+                </div>
+            </div>
+        </header>
+
+        <!-- Current Indicators -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="card bg-blue-50 border border-blue-100">
+                <h3 class="text-gray-500 font-medium text-sm">Muscle Activity (EMG)</h3>
+                <div class="mt-2 flex items-end">
+                    <span id="emgDisplay" class="text-4xl font-bold text-blue-700">--</span>
+                    <span class="ml-2 text-blue-500 font-medium pb-1">V</span>
+                </div>
+                <p id="emgLabel" class="text-xs text-blue-600 mt-2 font-medium">Normal / Resting</p>
+            </div>
+
+            <div class="card bg-green-50 border border-green-100">
+                <h3 class="text-gray-500 font-medium text-sm">Motion Stability</h3>
+                <div class="mt-2 flex items-end">
+                    <span id="stabilityDisplay" class="text-4xl font-bold text-green-700">Stable</span>
+                </div>
+                <p class="text-xs text-green-600 mt-2 font-medium">No significant tremors detected</p>
+            </div>
+
+            <div class="card flex flex-col justify-center items-center bg-gray-50 border border-gray-200">
+                <h3 class="text-gray-600 font-semibold mb-3">Diagnostic 90-Second Test</h3>
+                <button id="startTestBtn" onclick="startTest()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-sm">
+                    Start 90-Second Test
+                </button>
+                <div id="timerDisplay" class="hidden mt-3 text-2xl font-bold text-indigo-700">90s</div>
+            </div>
+        </div>
+
+        <!-- Live Graph -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Live EMG Signal</h2>
+                <div class="flex items-center space-x-2 text-xs">
+                    <span class="px-2 py-1 bg-gray-100 rounded text-gray-600 border">Threshold: > 0.5V (Spike)</span>
+                </div>
+            </div>
+            <div class="w-full h-80">
+                <canvas id="emgChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Test Results Modal (Hidden Initially) -->
+        <div id="resultsModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center pt-20 pb-20">
+            <div class="card max-w-lg w-full relative">
+                <h2 class="text-2xl font-bold text-gray-800 border-b pb-3">Test Results Summary</h2>
+                
+                <div class="mt-4 space-y-4">
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-gray-600">Duration</span>
+                        <span class="font-bold text-gray-800">90 seconds</span>
+                    </div>
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-gray-600">Readings Captured</span>
+                        <span id="resCount" class="font-bold text-gray-800">--</span>
+                    </div>
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-gray-600">Average EMG Voltage</span>
+                        <span id="resAvg" class="font-bold text-gray-800">-- V</span>
+                    </div>
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-gray-600">Peak Muscle Activation</span>
+                        <span id="resPeak" class="font-bold text-red-600">-- V</span>
+                    </div>
+                    
+                    <div class="mt-6 p-4 rounded-lg text-center" id="resConclusionContainer">
+                        <h3 class="text-lg font-bold" id="resConclusionText">Normal Activity</h3>
+                        <p class="text-sm mt-1" id="resConclusionSub">No intervention required at this time.</p>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Close</button>
+                    <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors" onclick="window.print()">Print Details</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // --- Shared State ---
+        let testActive = false;
+        let testCountdown = 90;
+        let testInterval = null;
+        let testDataBuffer = []; // stores voltage readings during 90-sec window
+
+        // --- Chart Initialization ---
+        const ctx = document.getElementById('emgChart').getContext('2d');
+        const emgChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(50).fill(''),
+                datasets: [{
+                    label: 'EMG Voltage (V)',
+                    data: Array(50).fill(0),
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        beginAtZero: true,
+                        suggestedMax: 2.0,
+                        grid: { color: '#e2e8f0' }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // --- Polling function ---
+        async function fetchSensorData() {
+            try {
+                // Fetch the latest 50 readings
+                const res = await fetch('/api/sensor-data/recent/?limit=50');
+                if (!res.ok) throw new Error("Network response was not ok");
+                
+                const data = await res.json();
+                
+                if (data.length > 0) {
+                    processLiveData(data);
+                }
+            } catch (error) {
+                console.error("Error fetching sensor data:", error);
+                document.getElementById('connectionStatus').className = "flex items-center text-red-600 font-semibold px-4 py-2 bg-red-50 rounded-full";
+                document.getElementById('connectionStatus').innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>Disconnected';
+            }
+        }
+
+        // --- Process and Update Visuals ---
+        function processLiveData(readings) {
+            // Restore connection GUI if restored
+            document.getElementById('connectionStatus').className = "flex items-center text-green-600 font-semibold px-4 py-2 bg-green-50 rounded-full";
+            document.getElementById('connectionStatus').innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500 mr-2 pulse"></span>System Online';
+
+            // Extract values for Chart
+            const voltages = readings.map(r => r.emg_voltage);
+            const latest = readings[readings.length - 1]; // rightmost
+
+            // Update Chart
+            emgChart.data.datasets[0].data = voltages;
+            
+            // Highlight spikes in the chart dynamically
+            emgChart.data.datasets[0].pointBackgroundColor = voltages.map(v => v > 0.5 ? 'red' : 'transparent');
+            emgChart.data.datasets[0].pointRadius = voltages.map(v => v > 0.5 ? 4 : 0);
+            emgChart.update();
+
+            // Update Stats Display
+            document.getElementById('emgDisplay').innerText = latest.emg_voltage.toFixed(2);
+            
+            if (latest.emg_voltage > 0.5) {
+                document.getElementById('emgLabel').innerText = "Elevated Activity Detected!";
+                document.getElementById('emgLabel').className = "text-xs mt-2 font-bold text-red-600";
+            } else {
+                document.getElementById('emgLabel').innerText = "Normal / Resting";
+                document.getElementById('emgLabel').className = "text-xs text-blue-600 mt-2 font-medium";
+            }
+
+            // Simple Gyro logic for tremor indicator
+            let gyroMag = Math.sqrt(
+                Math.pow(latest.gyro_x, 2) + 
+                Math.pow(latest.gyro_y, 2) + 
+                Math.pow(latest.gyro_z, 2)
+            );
+            
+            if (gyroMag > 1.5) {
+                document.getElementById('stabilityDisplay').innerText = "Unstable";
+                document.getElementById('stabilityDisplay').className = "text-4xl font-bold text-red-600";
+            } else {
+                document.getElementById('stabilityDisplay').innerText = "Stable";
+                document.getElementById('stabilityDisplay').className = "text-4xl font-bold text-green-700";
+            }
+
+            // Handle Active Test Accumulation
+            if (testActive) {
+                testDataBuffer.push(latest);
+            }
+        }
+
+        // --- 90-Second Test Logic ---
+        function startTest() {
+            testActive = true;
+            testCountdown = 90;
+            testDataBuffer = [];
+            
+            // UI transitions
+            document.getElementById("startTestBtn").classList.add("hidden");
+            const tDisp = document.getElementById("timerDisplay");
+            tDisp.classList.remove("hidden");
+            tDisp.innerText = `Recording: ${testCountdown}s remaining...`;
+
+            testInterval = setInterval(() => {
+                testCountdown -= 1;
+                tDisp.innerText = `Recording: ${testCountdown}s remaining...`;
+
+                if (testCountdown <= 0) {
+                    clearInterval(testInterval);
+                    finalizeTest();
+                }
+            }, 1000);
+        }
+
+        async function finalizeTest() {
+            testActive = false;
+            
+            // Revert UI
+            document.getElementById("timerDisplay").classList.add("hidden");
+            document.getElementById("startTestBtn").classList.remove("hidden");
+            document.getElementById("startTestBtn").innerText = "Start New 90-Second Test";
+
+            if (testDataBuffer.length === 0) {
+                alert("No data was captured during the test. Is the sensor turned on?");
+                return;
+            }
+
+            // Calculate Metrics
+            const count = testDataBuffer.length;
+            let sumVolt = 0;
+            let maxVolt = 0;
+            let unstableTicks = 0;
+
+            for (let r of testDataBuffer) {
+                sumVolt += r.emg_voltage;
+                if (r.emg_voltage > maxVolt) maxVolt = r.emg_voltage;
+                
+                let gyroMag = Math.sqrt(r.gyro_x**2 + r.gyro_y**2 + r.gyro_z**2);
+                if (gyroMag > 1.5) unstableTicks++;
+            }
+
+            const avgVolt = sumVolt / count;
+            const stabilityScore = 100 - ((unstableTicks / count) * 100);
+            
+            let conclusion = "Normal";
+            if (avgVolt > 0.4 || stabilityScore < 80) conclusion = "Needs Attention";
+
+            // Evaluate Date block to ISO
+            const end = new Date();
+            const start = new Date(end.getTime() - 90000);
+
+            // Save to Backend
+            try {
+                await fetch('/api/test-session/save/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        started_at: start.toISOString(),
+                        ended_at: end.toISOString(),
+                        num_readings: count,
+                        avg_emg: avgVolt,
+                        peak_emg: maxVolt,
+                        movement_stability_score: stabilityScore,
+                        result_label: conclusion
+                    })
+                });
+            } catch (e) {
+                console.error("Failed to save session:", e);
+            }
+
+            showResults(count, avgVolt, maxVolt, conclusion);
+        }
+
+        function showResults(count, avgVolt, maxVolt, conclusion) {
+            document.getElementById('resCount').innerText = count;
+            document.getElementById('resAvg').innerText = avgVolt.toFixed(3) + " V";
+            document.getElementById('resPeak').innerText = maxVolt.toFixed(3) + " V";
+            
+            const cont = document.getElementById('resConclusionContainer');
+            const tit = document.getElementById('resConclusionText');
+            const sub = document.getElementById('resConclusionSub');
+
+            if (conclusion === "Needs Attention") {
+                cont.className = "mt-6 p-4 rounded-lg text-center bg-red-100 text-red-900 border border-red-200";
+                tit.innerText = "Possible Tremor / Abnormality Detected";
+                sub.innerText = "The indicators suggest further evaluation is recommended based on captured thresholds.";
+            } else {
+                cont.className = "mt-6 p-4 rounded-lg text-center bg-green-100 text-green-900 border border-green-200";
+                tit.innerText = "Activity is Normal";
+                sub.innerText = "The patient's readings remained within standard operating thresholds.";
+            }
+            
+            document.getElementById('resultsModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('resultsModal').classList.add('hidden');
+        }
+
+        // Initialize polling (approx 400ms interval = fast but not overwhelming)
+        setInterval(fetchSensorData, 400);
+
+        // Fetch once on start
+        fetchSensorData();
+    </script>
+</body>
+</html>

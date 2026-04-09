@@ -1,0 +1,183 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Patient Profile - {{ patient.name }}{% endblock %}
+{% block page_title %}Patient Profile: {{ patient.name }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="/patients/{{ patient.id }}/edit/" class="btn btn-primary d-none d-md-block">Edit Profile</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Avatar */
+    .avatar-circle{ width:72px; height:72px; border-radius:14px; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:1.25rem; color:white; }
+
+    /* badges */
+    .badge-id{ background: linear-gradient(90deg,var(--brand-main),var(--brand-light)); color:white; border-radius:999px; padding:.45rem .65rem; font-weight:600; }
+
+    /* table small */
+    .table-sm thead th{ background:#fbfdff; color:var(--text-muted); font-size:.72rem; }
+
+    .meta-line{ color:var(--text-muted); font-size:.92rem; }
+
+    .section-title { font-size:.78rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--text-muted); margin-bottom:.5rem; }
+    
+    .card-modern { border:0; border-radius:12px; box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.05); background:#fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="row g-3">
+      <!-- left: overview -->
+      <div class="col-lg-4">
+        <div class="card-modern card p-3">
+          <div class="d-flex align-items-center gap-3">
+            <div class="avatar-circle" style="background: linear-gradient(180deg,var(--primary),#0b5ed7);">{{ patient.name|slice:":1"|upper }}</div>
+            <div>
+              <h4 class="mb-0">{{ patient.name }}</h4>
+              <div class="meta-line">{{ patient.email|default:'—' }}</div>
+            </div>
+          </div>
+
+          <hr>
+
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div>
+              <div class="section-title">Patient Overview</div>
+              <div class="d-flex gap-2 align-items-center">
+                <div class="badge-id">ID: {{ patient.patient_id }}</div>
+                <button class="btn btn-sm btn-outline-secondary" onclick="copyID()" title="Copy patient ID"><i class="bi bi-clipboard"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <p class="mb-1"><strong>Age:</strong> <span class="ms-1">{{ patient.age|default:'--' }}</span></p>
+            <p class="mb-1"><strong>Gender:</strong> <span class="ms-1">{{ patient.gender|default:'--' }}</span></p>
+            <p class="mb-1"><strong>Diagnosis:</strong> <span class="ms-1">{{ patient.diagnosis|default:'--' }}</span></p>
+          </div>
+
+          <hr>
+
+          <div>
+            <p class="section-title">Notes</p>
+            <p class="text-muted" style="white-space:pre-line;">{{ patient.notes|default:'No additional notes.' }}</p>
+          </div>
+
+        </div>
+
+        <!-- quick stats -->
+        <div class="mt-3">
+          <div class="row g-2">
+            <div class="col-6">
+              <div class="card-modern card p-2 text-center">
+                <div class="small-muted">Tests</div>
+                <div class="h5 mb-0">{{ tests|length }}</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="card-modern card p-2 text-center">
+                <div class="small-muted">Last Tremor</div>
+                <div class="h5 mb-0">{% if last_test %}{{ last_test.tremor_score|floatformat:1 }}{% else %}-{% endif %}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- right: assessment & history -->
+      <div class="col-lg-8">
+        <div class="card-modern card mb-3 p-3">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="section-title">Assessment & Monitoring</div>
+              <h5 class="mb-1">NeuroSense-Based Assessment</h5>
+              <div class="text-muted">Run tests for this patient or open the global dashboard.</div>
+            </div>
+            <div class="d-flex gap-2">
+              <a href="/doctor-dashboard/" class="btn btn-outline-secondary">Open Dashboard</a>
+              <a href="/doctor-dashboard/?patient_id={{ patient.id }}" class="btn btn-primary">▶ Start 90-sec Test</a>
+            </div>
+          </div>
+
+          <div class="mt-2">
+            <small class="text-muted">Recent metrics</small>
+            <!-- placeholder for small sparkline/metric cards -->
+            <div class="row g-2 mt-2">
+              <div class="col-4">
+                <div class="card-modern card p-2 text-center">
+                  <div class="small-muted">Avg Tremor</div>
+                  <div class="h6 mb-0">{% if avg_tremor %}{{ avg_tremor|floatformat:1 }}{% else %}-{% endif %}</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="card-modern card p-2 text-center">
+                  <div class="small-muted">Grip</div>
+                  <div class="h6 mb-0">{% if avg_grip %}{{ avg_grip|floatformat:1 }}{% else %}-{% endif %}</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="card-modern card p-2 text-center">
+                  <div class="small-muted">Movements</div>
+                  <div class="h6 mb-0">{% if avg_mov %}{{ avg_mov|floatformat:1 }}{% else %}-{% endif %}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- history -->
+        <div class="card-modern card p-3">
+          <div class="section-title">History</div>
+          <h5 class="mb-2">Previous Tests</h5>
+
+          {% if tests %}
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th class="text-center">Tremor Score</th>
+                    <th class="text-center">Readings</th>
+                    <th class="text-end">Report</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for t in tests %}
+                    <tr>
+                      <td>{{ t.created_at }}</td>
+                      <td class="text-center"><span class="badge bg-danger">{{ t.tremor_score|floatformat:1 }} / 100</span></td>
+                      <td class="text-center">{{ t.num_readings }}</td>
+                      <td class="text-end">
+                        <a href="/api/test-session/{{ t.id }}/summary/" target="_blank" class="btn btn-sm btn-outline-primary">View Report</a>
+                        <a href="/tests/{{ t.id }}/download/" class="btn btn-sm btn-outline-secondary ms-1">Download</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">No tests recorded yet. Run a 90-sec biosensor test to populate history.</p>
+          {% endif %}
+
+        </div>
+      </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function copyID(){
+    const idText = 'ID: {{ patient.patient_id }}';
+    navigator.clipboard?.writeText(idText).then(()=>{
+      const btn = event?.target.closest('button');
+      if(btn){
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-clipboard-check"></i>';
+        setTimeout(()=> btn.innerHTML = orig, 1200);
+      }
+    }).catch(()=>alert('Unable to copy'));
+  }
+</script>
+{% endblock %}
