@@ -233,7 +233,8 @@ let sessionStart = null;
 let sessionData  = [], sessionIds = new Set();
 let selectedPatient = null;
 let chartFFT, chartAmp, chartEMG, chartAxis;
-let gBase = {x:0, y:0, z:0};   // gravity baseline, set on first 10 samples
+let gBase = {x:0, y:0, z:0};   // gravity baseline
+let gBaseSet = false;          // Fix 2: calibration flag
 
 // ════════════════════════════════════════════════
 //  HELPERS
@@ -243,6 +244,7 @@ const toGyroDps = r => r / GYRO_LSB;
 const fmt       = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 const avg       = a => a.length ? a.reduce((s,v)=>s+v,0)/a.length : 0;
 const ampOf     = r => {
+  if (!gBaseSet) return 0; // Fix 3: guard before calibration
   const cx=toAccMs2(r.acc_x)-gBase.x, cy=toAccMs2(r.acc_y)-gBase.y, cz=toAccMs2(r.acc_z)-gBase.z;
   return Math.sqrt(cx*cx+cy*cy+cz*cz);
 };
@@ -366,6 +368,7 @@ function startMonitoring() {
   sessionStart = new Date();
   countdown    = SESSION_SECS;
   gBase        = {x:0, y:0, z:0}; // reset gravity baseline
+  gBaseSet     = false;          // Fix 2: reset flag
 
   clearInterval(previewId);
 
@@ -410,7 +413,7 @@ async function fetchData() {
       // show last timestamp in topbar always
       const latest = data[0]; // API returns newest first
       document.getElementById('last-timestamp').textContent =
-        'Last reading: ' + new Date(latest.timestamp).toLocaleTimeString();
+        'Last reading: ' + new Date(latest.created_at || latest.timestamp).toLocaleTimeString();
     }
     processData(data);
   } catch(e) {
@@ -429,7 +432,8 @@ function setConn(ok) {
 function processData(apiData) {
   if (!apiData || !apiData.length) return;
   // API returns newest-first; sort to ascending for processing
-  const sorted = [...apiData].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  // Fix 4: use created_at if available
+  const sorted = [...apiData].sort((a,b)=>new Date(a.created_at || a.timestamp)-new Date(b.created_at || b.timestamp));
 
   if (!sessionStart) {
     // PRE-SESSION: just update live EMG/gyro preview cards
@@ -444,23 +448,24 @@ function processData(apiData) {
   // Accumulate session data
   sorted.forEach(r=>{
     if (!r.id) return;
-    const t = new Date(r.timestamp);
+    const t = new Date(r.created_at || r.timestamp);
     if (t >= sessionStart && !sessionIds.has(r.id)) {
       sessionIds.add(r.id);
       sessionData.push(r);
     }
   });
-  sessionData.sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  sessionData.sort((a,b)=>new Date(a.created_at || a.timestamp)-new Date(b.created_at || b.timestamp));
   if (!sessionData.length) return;
 
-  // Gravity baseline from first 10 samples (update once we have enough)
-  if (sessionData.length >= 10 && gBase.x === 0 && gBase.y === 0 && gBase.z === 0) {
+  // Gravity baseline from first 10 samples (Fix 2: use boolean flag)
+  if (sessionData.length >= 10 && !gBaseSet) {
     const f10 = sessionData.slice(0,10);
     gBase = {
       x: avg(f10.map(r=>toAccMs2(r.acc_x))),
       y: avg(f10.map(r=>toAccMs2(r.acc_y))),
       z: avg(f10.map(r=>toAccMs2(r.acc_z)))
     };
+    gBaseSet = true;
   }
 
   const latest = sessionData[sessionData.length-1];
@@ -472,12 +477,22 @@ function processData(apiData) {
   const currentAmp = avg(last10.map(ampOf));
 
   // ── FFT ──────────────────────────────────────
-  const fftInput = last50.map(r=>toAccMs2(r.acc_z)-gBase.z);
+  // Fix 5: guard FFT input
+  const fftInput = gBaseSet ? last50.map(r=>toAccMs2(r.acc_z)-gBase.z) : [];
   const fft      = computeDFT(fftInput);
-  let maxP=0, maxK=0;
-  for (let i=1;i<fft.length;i++) if(fft[i]>maxP){ maxP=fft[i]; maxK=i; }
   const hzPerBin = last50.length > 0 ? 50.0/last50.length : 0;
-  const domFreq  = maxK * hzPerBin;
+
+  let maxP=0, maxK=0;
+  if (fft.length > 0) {
+    // Fix 1: only search in 2-15 Hz band
+    for (let i=1; i<fft.length; i++) {
+        const freq = i * hzPerBin;
+        if (freq >= 2 && freq <= 15) {
+            if(fft[i] > maxP) { maxP=fft[i]; maxK=i; }
+        }
+    }
+  }
+  const domFreq = maxK * hzPerBin;
 
   // ── UPDRS ─────────────────────────────────────
   let updrs=0, uLabel='Absent', uColor='var(--green)';
@@ -592,13 +607,13 @@ ${flags.map(f=>'  '+f.m).join('\n')}`;
   }
 
   // Amplitude — full session timeline
-  chartAmp.data.labels = sessionData.map(r=>((new Date(r.timestamp)-sessionStart)/1000).toFixed(0)+'s');
+  chartAmp.data.labels = sessionData.map(r=>((new Date(r.created_at || r.timestamp)-sessionStart)/1000).toFixed(0)+'s');
   chartAmp.data.datasets[0].data = sessionData.map(ampOf);
   chartAmp.update('none');
   document.getElementById('ts-amp').textContent = `${sessionData.length} samples · Updated ${nowTS}`;
 
   // EMG bar
-  chartEMG.data.labels = last20.map(r=>new Date(r.timestamp).toLocaleTimeString());
+  chartEMG.data.labels = last20.map(r=>new Date(r.created_at || r.timestamp).toLocaleTimeString());
   chartEMG.data.datasets[0].data = last20.map(r=>r.emg_rms_pct||0);
   chartEMG.data.datasets[0].backgroundColor = last20.map(r=>(r.emg_rms_pct||0)>5?'rgba(11,102,119,.75)':'rgba(148,163,184,.5)');
   chartEMG.update('none');
@@ -606,7 +621,7 @@ ${flags.map(f=>'  '+f.m).join('\n')}`;
 
   // Axis decomposition — last 30
   const last30 = sessionData.slice(-30);
-  chartAxis.data.labels = last30.map(r=>new Date(r.timestamp).toLocaleTimeString());
+  chartAxis.data.labels = last30.map(r=>new Date(r.created_at || r.timestamp).toLocaleTimeString());
   chartAxis.data.datasets[0].data = last30.map(r=>toAccMs2(r.acc_x)-gBase.x);
   chartAxis.data.datasets[1].data = last30.map(r=>toAccMs2(r.acc_y)-gBase.y);
   chartAxis.data.datasets[2].data = last30.map(r=>toAccMs2(r.acc_z)-gBase.z);
@@ -621,7 +636,7 @@ ${flags.map(f=>'  '+f.m).join('\n')}`;
     const gxd=toGyroDps(r.gyro_x||0), gyd=toGyroDps(r.gyro_y||0), gzd=toGyroDps(r.gyro_z||0);
     const gm=Math.sqrt(gxd*gxd+gyd*gyd+gzd*gzd);
     tbody.innerHTML+=`<tr>
-      <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+      <td>${new Date(r.created_at || r.timestamp).toLocaleTimeString()}</td>
       <td>${(r.emg_rms_pct||0).toFixed(1)}%</td>
       <td>${ax.toFixed(3)}</td><td>${ay.toFixed(3)}</td><td>${az.toFixed(3)}</td>
       <td>${gm.toFixed(2)}</td>
