@@ -234,7 +234,8 @@ let sessionData  = [], sessionIds = new Set();
 let selectedPatient = null;
 let chartFFT, chartAmp, chartEMG, chartAxis;
 let gBase = {x:0, y:0, z:0};   // gravity baseline
-let gBaseSet = false;          // Fix 2: calibration flag
+let gBaseSet = false;          // calibration flag
+let smoothedFreq = 0;          // EMA-smoothed dominant frequency (spike rejection)
 
 // ════════════════════════════════════════════════
 //  HELPERS
@@ -250,27 +251,33 @@ const ampOf     = r => {
 };
 
 function computeDFT(samples) {
-  if (!samples || samples.length < 20) return []; // Fix: Wait for stable window
+  if (!samples || samples.length < 20) return [];
   const N = samples.length;
-  
-  // Detrend: Remove the mean of the current window to kill DC bias
+
+  // Detrend: Remove window mean to kill DC bias
   const mean = samples.reduce((s,v)=>s+v,0) / N;
-  const detrended = samples.map(v => v - mean);
-  
+
+  // Apply Hann window BEFORE DFT.
+  // This tapers the signal to zero at both ends of the window,
+  // preventing sharp movement transients from bleeding energy
+  // across all frequency bins (spectral leakage).
+  const windowed = samples.map((v, n) => {
+    const hann = 0.5 * (1 - Math.cos((2 * Math.PI * n) / (N - 1)));
+    return (v - mean) * hann;
+  });
+
+  // Hann window reduces total signal power by ~50%, compensate with 8/3 factor
+  const scale = (2 * 8) / (3 * N);
+
   const out = [];
   for (let k = 0; k < N/2; k++) {
     let re = 0, im = 0;
     for (let n = 0; n < N; n++) {
       const a = (2*Math.PI*k*n)/N;
-      re += detrended[n]*Math.cos(a);
-      im -= detrended[n]*Math.sin(a);
+      re += windowed[n]*Math.cos(a);
+      im -= windowed[n]*Math.sin(a);
     }
-    // Normalize and zero out the DC bin (first bin) to prevent scaling issues
-    if (k === 0) {
-      out.push(0);
-    } else {
-      out.push((Math.sqrt(re*re+im*im) * 2) / N);
-    }
+    out.push(k === 0 ? 0 : Math.sqrt(re*re+im*im) * scale);
   }
   return out;
 }
@@ -378,8 +385,9 @@ function startMonitoring() {
   sessionIds   = new Set();
   sessionStart = new Date();
   countdown    = SESSION_SECS;
-  gBase        = {x:0, y:0, z:0}; // reset gravity baseline
-  gBaseSet     = false;          // Fix 2: reset flag
+  gBase        = {x:0, y:0, z:0};
+  gBaseSet     = false;
+  smoothedFreq = 0; // Reset EMA on new session
 
   clearInterval(previewId);
 
@@ -490,22 +498,35 @@ function processData(apiData) {
   const currentAmp = avg(last10.map(ampOf));
 
   // ── FFT ──────────────────────────────────────
-  // Fix 5: guard FFT input
+  // Guard: only run if baseline is calibrated
   const fftInput = gBaseSet ? last50.map(r=>toAccMs2(r.acc_z)-gBase.z) : [];
   const fft      = computeDFT(fftInput);
-  const hzPerBin = last50.length > 0 ? 50.0/last50.length : 0;
 
+  // The ESP32 transmits once every 200ms → effective sample rate = 5 Hz
+  // hzPerBin = sampleRate / N = 5.0 / N
+  const EFFECTIVE_HZ = 5.0;
+  const hzPerBin = fftInput.length > 0 ? EFFECTIVE_HZ / fftInput.length : 0;
+
+  // Find peak only in the clinically relevant 2–12 Hz band
+  // (Nyquist at 5Hz transmission = 2.5 Hz, so realistic detection cap is ~2.4 Hz;
+  //  the band filter prevents aliased noise from being misclassified)
   let maxP=0, maxK=0;
   if (fft.length > 0) {
-    // Fix 1: only search in 2-15 Hz band
     for (let i=1; i<fft.length; i++) {
-        const freq = i * hzPerBin;
-        if (freq >= 2 && freq <= 15) {
-            if(fft[i] > maxP) { maxP=fft[i]; maxK=i; }
-        }
+      const freq = i * hzPerBin;
+      if (freq >= 1 && freq <= 2.4) {   // Cap at Nyquist-safe limit
+        if(fft[i] > maxP) { maxP=fft[i]; maxK=i; }
+      }
     }
   }
-  const domFreq = maxK * hzPerBin;
+  const rawFreq = maxK * hzPerBin;
+
+  // Exponential moving average smoothing on dominant frequency (α=0.15)
+  // This prevents a single sharp movement from spiking the UPDRS classifier.
+  // A tremor must persist across multiple FFT windows to register.
+  const EMA_ALPHA = 0.15;
+  if (rawFreq > 0) smoothedFreq = EMA_ALPHA * rawFreq + (1 - EMA_ALPHA) * smoothedFreq;
+  const domFreq = smoothedFreq;
 
   // ── UPDRS ─────────────────────────────────────
   let updrs=0, uLabel='Absent', uColor='var(--green)';
