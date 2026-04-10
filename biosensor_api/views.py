@@ -116,6 +116,25 @@ def login_view(request):
         return render(request, "login.html", {"error": "Invalid credentials"})
     return render(request, "login.html")
 
+def register_view(request):
+    if request.method == "POST":
+        from django.contrib.auth.models import User
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        password_confirm = request.POST.get("password_confirm")
+        
+        if password != password_confirm:
+            return render(request, "register.html", {"error": "Passwords do not match"})
+        
+        if User.objects.filter(username=username).exists():
+            return render(request, "register.html", {"error": "Username already exists"})
+            
+        user = User.objects.create_user(username=username, password=password)
+        from django.contrib.auth import login
+        login(request, user)
+        return redirect("/doctor-dashboard/")
+    return render(request, "register.html")
+
 def logout_view(request):
     from django.contrib.auth import logout
     logout(request)
